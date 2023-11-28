@@ -13,8 +13,8 @@ VideoThread::VideoThread()
 
 VideoThread::~VideoThread()
 {
-    m_thread->quit();
-    m_thread->wait();
+    qDebug() << " 6564";
+    m_cap.release();
 }
 
 void VideoThread::setVideoPath(const QString &path)
@@ -34,6 +34,8 @@ int VideoThread::getVideoFrameCount()
 void VideoThread::terminatePlay()
 {
     m_type = CONTL_TYPE::END;
+    m_thread->quit();
+    m_thread->wait();
 }
 
 void VideoThread::runPlay()
@@ -54,7 +56,6 @@ void VideoThread::runPlay()
             curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
             emit sendFrame(curFrame, m_frame);
-            qDebug() << curFrame;
         }
         else
         {
@@ -95,7 +96,8 @@ void VideoThread::on_sliderPress()
 
 void VideoThread::on_sliderRelease()
 {
-    m_type = isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE;
+    m_type = (isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
+    emit VideoThread::startPlay();
 }
 
 void VideoThread::setCurFrame(int _curFrame)
@@ -111,8 +113,8 @@ void VideoThread::setCurFrame(int _curFrame)
             emit VideoThread::sendFrame(curFrame, m_frame);
         }
         else
-        {
-            m_cap.set(CAP_PROP_POS_FRAMES, --curFrame); // 后退一帧
+        {                  // 表示已运行至视频末尾
+            isPlay = true; // 故此次松开进度条继续播放调用runPlay将m_type置为END;
         }
     }
 }
