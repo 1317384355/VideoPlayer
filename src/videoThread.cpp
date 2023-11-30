@@ -1,11 +1,16 @@
 #include "videoThread.h"
 #include "demo.h"
 #include <QDebug>
+#include <QWaitCondition>
+
+#define capacity 100
 
 using namespace cv;
+using namespace std;
 
-VideoThread::VideoThread(QQueue<CFrame *> *_queue, int *_type) : queue(_queue), m_type(_type)
+VideoThread::VideoThread(queue<CFrame *> *_queue, int *_type) : m_queue(_queue), m_type(_type)
 {
+
     m_thread = new QThread;
     this->moveToThread(m_thread);
     connect(this, &VideoThread::startPlay, this, &VideoThread::runPlay);
@@ -51,15 +56,32 @@ void VideoThread::runPlay()
         {
             curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-            queue->enqueue(new CFrame(m_frame, ));
+
+            m_queue->push(new CFrame(m_frame, m_cap.get(CAP_PROP_POS_MSEC)));
         }
         else
         {
             *m_type = CONTL_TYPE::END;
             break;
         }
-        QThread::msleep(30); // 待修改
+
+        if (m_queue->size() > capacity)
+        {
+            QWaitCondition wait;
+            wait.wait(&m_mutex, 1000);
+        }
     }
+}
+
+inline Mat VideoThread::getNextFrame()
+{
+    Mat frame;
+    if (m_cap.read(frame))
+    {
+        curFrame++;
+        cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
+    }
+    return frame;
 }
 
 void VideoThread::setCurFrame(int _curFrame)
