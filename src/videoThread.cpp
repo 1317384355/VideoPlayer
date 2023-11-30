@@ -2,11 +2,9 @@
 #include "demo.h"
 #include <QDebug>
 
-extern CONTL_TYPE m_type;
-
 using namespace cv;
 
-VideoThread::VideoThread()
+VideoThread::VideoThread(QQueue<CFrame *> *_queue, int *_type) : queue(_queue), m_type(_type)
 {
     m_thread = new QThread;
     this->moveToThread(m_thread);
@@ -24,7 +22,7 @@ void VideoThread::setVideoPath(const QString &path)
 {
     if (m_cap.open(path.toStdString()))
     {
-        m_type = CONTL_TYPE::PLAY;
+        *m_type = CONTL_TYPE::PLAY;
         curFrame = 0;
     }
 }
@@ -38,25 +36,26 @@ qint64 VideoThread::getVideoFrameCount()
 
 void VideoThread::runPlay()
 {
-    if (m_type == NONE)
+    if (*m_type == NONE)
         return;
-    if (m_type == CONTL_TYPE::RESUME)
+    if (*m_type == CONTL_TYPE::RESUME)
     {
         curFrame = 0;
         m_cap.set(CAP_PROP_POS_FRAMES, curFrame);
-        m_type = CONTL_TYPE::PLAY;
+        *m_type = CONTL_TYPE::PLAY;
     }
-    while (m_type == CONTL_TYPE::PLAY)
+    Mat frame;
+    while (*m_type == CONTL_TYPE::PLAY)
     {
-        if (m_cap.read(m_frame))
+        if (m_cap.read(frame))
         {
             curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-            emit sendFrame(curFrame, m_frame);
+            queue->enqueue(new CFrame(m_frame, ));
         }
         else
         {
-            m_type = CONTL_TYPE::END;
+            *m_type = CONTL_TYPE::END;
             break;
         }
         QThread::msleep(30); // 待修改
@@ -66,7 +65,7 @@ void VideoThread::runPlay()
 void VideoThread::setCurFrame(int _curFrame)
 {
     curFrame = _curFrame;
-    if (m_type != CONTL_TYPE::PLAY)
+    if (*m_type != CONTL_TYPE::PLAY)
     {
         m_cap.set(CAP_PROP_POS_FRAMES, curFrame);
         if (m_cap.read(m_frame))

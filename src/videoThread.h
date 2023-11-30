@@ -1,6 +1,15 @@
 #pragma once
 #include <opencv2/opencv.hpp>
 #include <QThread>
+#include <QQueue>
+#include <QMutex>
+#include <QWaitCondition>
+
+struct CFrame
+{
+    cv::Mat frame;
+    double pts;
+};
 
 class VideoThread : public QObject
 {
@@ -20,13 +29,15 @@ public slots:
     void setCurFrame(int _curFrame);
 
 private:
+    QQueue<CFrame *> *queue;
+    int *m_type;
     QThread *m_thread;      // 解码视频线程
     cv::VideoCapture m_cap; // 解码视频对象实例
     cv::Mat m_frame;        // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
     int curFrame = 0;       // 当前帧进度
 
 public:
-    VideoThread();
+    VideoThread(QQueue<CFrame *> *_queue, int *_type);
     ~VideoThread();
 
     // 设置视频路径
