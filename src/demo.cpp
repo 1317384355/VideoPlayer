@@ -1,8 +1,11 @@
 #include "demo.h"
+#include "audioThread.h"
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QVBoxLayout>
 #include <QDebug>
+
+CONTL_TYPE m_type = CONTL_TYPE::NONE;
 
 using namespace cv;
 
@@ -40,8 +43,7 @@ CMediaDialog::CMediaDialog(QWidget *parent)
 
 CMediaDialog::~CMediaDialog()
 {
-    video_th->terminatePlay(); // 内含quit()
-    video_th->deleteLater();
+    terminatePlay();
 }
 
 void CMediaDialog::receviceFrame(int curFrame, cv::Mat frame)
@@ -57,6 +59,11 @@ void CMediaDialog::receviceFrame(int curFrame, cv::Mat frame)
 
 void CMediaDialog::showVideo(const QString &path)
 {
+
+    AudioThread *thread = new AudioThread;
+    thread->setAudioPath(path);
+    thread->getAudioFrameCount();
+
     slider->show();
 
     video_th = new VideoThread;
@@ -66,15 +73,57 @@ void CMediaDialog::showVideo(const QString &path)
 
     connect(video_th, &VideoThread::sendFrame, this, &CMediaDialog::receviceFrame, Qt::DirectConnection); //  Qt::DirectConnection 必须
 
-    connect(label, &CLabel::clicked, [this]()
-            { this->video_th->changePlayState(); });
+    connect(label, &CLabel::clicked, this, &CMediaDialog::changePlayState);
 
-    connect(slider, &VideoSlider::sliderClicked, this, &CMediaDialog::setIsPlay);
+    connect(slider, &VideoSlider::sliderClicked, this, &CMediaDialog::startSeek);
     connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
-    connect(slider, &VideoSlider::sliderReleased, this, &CMediaDialog::setIsPlay);
+    connect(slider, &VideoSlider::sliderReleased, this, &CMediaDialog::endSeek);
 
-    emit video_th->startPlay();
+    connect(this, &CMediaDialog::startPlay, video_th, &VideoThread::startPlay);
+    connect(this, &CMediaDialog::startPlay, thread, &AudioThread::startPlay);
+
+    emit this->startPlay();
     this->exec();
+}
+
+void CMediaDialog::changePlayState()
+{
+    switch (m_type)
+    {
+    case CONTL_TYPE::END:
+        m_type = CONTL_TYPE::RESUME;
+        break;
+
+    case CONTL_TYPE::PLAY:
+
+        m_type = CONTL_TYPE::PAUSE;
+        break;
+
+    case CONTL_TYPE::PAUSE:
+        m_type = CONTL_TYPE::PLAY;
+        break;
+
+    default:
+        break;
+    }
+    emit CMediaDialog::startPlay();
+}
+
+void CMediaDialog::startSeek()
+{
+    isPlay = (m_type == CONTL_TYPE::PLAY);
+    m_type = CONTL_TYPE::PAUSE;
+}
+
+void CMediaDialog::endSeek()
+{
+    m_type = (isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
+    emit CMediaDialog::startPlay();
+}
+
+void CMediaDialog::terminatePlay()
+{
+    m_type = CONTL_TYPE::END;
 }
 
 int CMediaDialog::showPic(const QString &path)
@@ -89,18 +138,6 @@ int CMediaDialog::showPic(const QString &path)
 
     receviceFrame(0, img);
     return this->exec();
-}
-
-void CMediaDialog::setIsPlay(bool isPlay)
-{
-    if (isPlay)
-    {
-        video_th->on_sliderRelease();
-    }
-    else
-    {
-        video_th->on_sliderPress();
-    }
 }
 
 void CMediaDialog::resizeEvent(QResizeEvent *event)

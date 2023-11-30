@@ -1,4 +1,5 @@
 #pragma once
+
 #include <QDialog>
 #include <QLabel>
 #include <QPixmap>
@@ -6,6 +7,17 @@
 #include <QMouseEvent>
 #include "videoThread.h"
 #include <opencv2/opencv.hpp>
+
+enum CONTL_TYPE
+{
+    NONE,
+    PLAY,
+    PAUSE,
+    RESUME,
+    END,
+};
+
+extern CONTL_TYPE m_type;
 
 class CLabel : public QLabel
 {
@@ -36,9 +48,9 @@ private:
     int moveCount = 0; // 减少移动时发出切换帧信号次数
 
 signals:
-    void sliderClicked(bool play = false);
+    void sliderClicked();
     void sliderMoved(int value);
-    void sliderReleased(bool play = true);
+    void sliderReleased();
 
 protected:
     void mousePressEvent(QMouseEvent *event)
@@ -61,7 +73,7 @@ protected:
             double pos = event->pos().x() / (double)width();
             setValue(pos * (maximum() - minimum()) + minimum());
             moveCount++;
-            if (moveCount > 20)
+            if (moveCount > 15)
             {
                 moveCount = 0;
                 emit VideoSlider::sliderMoved(this->value());
@@ -89,6 +101,18 @@ public:
 class CMediaDialog : public QDialog
 {
     Q_OBJECT
+signals:
+    void startPlay();
+
+private slots:
+    void receviceFrame(int curFrame, cv::Mat frame);
+
+    // 响应拖动进度条, 当鼠标压下时暂停, 并保存播放状态
+    void startSeek();
+
+    // 响应拖动进度条, 当鼠标松开时恢复播放状态
+    void endSeek();
+
 private:
     CLabel *label;
     QPixmap pix;
@@ -96,9 +120,7 @@ private:
     VideoSlider *slider;
     VideoThread *video_th;
 
-private slots:
-    void receviceFrame(int curFrame, cv::Mat frame);
-    void setIsPlay(bool isPlay);
+    bool isPlay = false; // 保存拖动进度条前视频播放状态
 
 protected:
     void resizeEvent(QResizeEvent *event);
@@ -109,5 +131,9 @@ public:
     ~CMediaDialog();
 
     void showVideo(const QString &path);
+    void changePlayState();
+    // 强制关闭
+    void terminatePlay();
+
     int showPic(const QString &path);
 };

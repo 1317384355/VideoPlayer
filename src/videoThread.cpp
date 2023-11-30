@@ -1,5 +1,8 @@
 #include "videoThread.h"
+#include "demo.h"
 #include <QDebug>
+
+extern CONTL_TYPE m_type;
 
 using namespace cv;
 
@@ -13,7 +16,7 @@ VideoThread::VideoThread()
 
 VideoThread::~VideoThread()
 {
-    qDebug() << " 6564";
+    qDebug() << "~VideoThread()";
     m_cap.release();
 }
 
@@ -26,16 +29,11 @@ void VideoThread::setVideoPath(const QString &path)
     }
 }
 
-int VideoThread::getVideoFrameCount()
+qint64 VideoThread::getVideoFrameCount()
 {
-    return m_cap.get(CAP_PROP_FRAME_COUNT);
-}
-
-void VideoThread::terminatePlay()
-{
-    m_type = CONTL_TYPE::END;
-    m_thread->quit();
-    m_thread->wait();
+    qint64 ret = m_cap.get(CAP_PROP_FRAME_COUNT);
+    qDebug() << ret;
+    return ret;
 }
 
 void VideoThread::runPlay()
@@ -50,7 +48,6 @@ void VideoThread::runPlay()
     }
     while (m_type == CONTL_TYPE::PLAY)
     {
-
         if (m_cap.read(m_frame))
         {
             curFrame++;
@@ -62,42 +59,8 @@ void VideoThread::runPlay()
             m_type = CONTL_TYPE::END;
             break;
         }
-        QThread::msleep(40); // 待修改
+        QThread::msleep(30); // 待修改
     }
-}
-
-void VideoThread::changePlayState()
-{
-    switch (m_type)
-    {
-    case CONTL_TYPE::END:
-        m_type = CONTL_TYPE::RESUME;
-        break;
-
-    case CONTL_TYPE::PLAY:
-        m_type = CONTL_TYPE::PAUSE;
-        break;
-
-    case CONTL_TYPE::PAUSE:
-        m_type = CONTL_TYPE::PLAY;
-        break;
-
-    default:
-        break;
-    }
-    emit VideoThread::startPlay();
-}
-
-void VideoThread::on_sliderPress()
-{
-    isPlay = (m_type == CONTL_TYPE::PLAY);
-    m_type = CONTL_TYPE::PAUSE;
-}
-
-void VideoThread::on_sliderRelease()
-{
-    m_type = (isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
-    emit VideoThread::startPlay();
 }
 
 void VideoThread::setCurFrame(int _curFrame)
@@ -111,10 +74,6 @@ void VideoThread::setCurFrame(int _curFrame)
             curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
             emit VideoThread::sendFrame(curFrame, m_frame);
-        }
-        else
-        {                  // 表示已运行至视频末尾
-            isPlay = true; // 故此次松开进度条继续播放调用runPlay将m_type置为END;
         }
     }
 }

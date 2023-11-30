@@ -20,21 +20,10 @@ public slots:
     void setCurFrame(int _curFrame);
 
 private:
-    enum CONTL_TYPE
-    {
-        NONE,
-        PLAY,
-        PAUSE,
-        RESUME,
-        END,
-    };
-    QThread *m_thread;                    // 解码视频线程
-    CONTL_TYPE m_type = CONTL_TYPE::NONE; // 视频播放状态
-    cv::VideoCapture m_cap;               // 解码视频对象实例
-    cv::Mat m_frame;                      // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
-    int curFrame = 0;                     // 当前帧进度
-
-    bool isPlay = false; // 保存拖动进度条前视频播放状态
+    QThread *m_thread;      // 解码视频线程
+    cv::VideoCapture m_cap; // 解码视频对象实例
+    cv::Mat m_frame;        // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
+    int curFrame = 0;       // 当前帧进度
 
 public:
     VideoThread();
@@ -44,20 +33,5 @@ public:
     void setVideoPath(const QString &path);
 
     // 得到当前视频总帧数
-    int getVideoFrameCount();
-
-    // 强制关闭
-    void terminatePlay();
-
-    // 不可作为槽函数;
-    // 响应点击屏幕 暂停\播放 事件
-    void changePlayState();
-
-    // 不可作为槽函数
-    // 响应拖动进度条, 当鼠标压下时暂停, 并保存播放状态
-    void on_sliderPress();
-
-    // 不可作为槽函数
-    // 响应拖动进度条, 当鼠标松开时恢复播放状态
-    void on_sliderRelease();
+    qint64 getVideoFrameCount();
 };
