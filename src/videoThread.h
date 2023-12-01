@@ -1,7 +1,6 @@
 #pragma once
+#include "playerCommand.h"
 #include <opencv2/opencv.hpp>
-#include <QThread>
-#include <QElapsedTimer>
 
 struct CFrame
 {
@@ -18,6 +17,7 @@ signals:
     void sendFrame(int curFrame, cv::Mat frame);
     // 开始播放信号, 必须由此信号发出的播放才可在子线程中播放
     void startPlay();
+    void finishPlay();
 
 private slots:
     // 播放\重播 视频
@@ -28,21 +28,27 @@ public slots:
     void setCurFrame(int _curFrame);
 
 private:
-    double last_pts = 0;
-    QElapsedTimer *m_time;
+    QTime *m_time;
     int *m_type;
     QThread *m_thread;      // 解码视频线程
     cv::VideoCapture m_cap; // 解码视频对象实例
     cv::Mat m_frame;        // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
     int curFrame = 0;       // 当前帧进度
+    int last_pts = 0;
 
 public:
-    VideoThread(int *_type, QElapsedTimer *_time);
+    VideoThread(int *_type, QTime *_time);
     ~VideoThread();
 
+    bool resume();
+
     // 设置视频路径
-    void setVideoPath(const QString &path);
+    bool setVideoPath(const QString &path);
+
+    inline int getDiffTime();
 
     // 得到当前视频总帧数
-    qint64 getVideoFrameCount();
+    int getVideoFrameCount();
+
+    int getVideoDuration();
 };

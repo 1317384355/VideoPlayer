@@ -1,8 +1,8 @@
 #pragma once
 
-#include <QThread>
 #include <QIODevice>
 #include <QAudioOutput>
+#include "playerCommand.h"
 
 extern "C"
 {
@@ -33,23 +33,28 @@ private:
     uint8_t *convertedAudioBuffer;
     AVPacket packet;
     int audioStreamIndex;
+    int last_pts = 0;
 
     QThread *m_thread;
+    int *m_type;
+    QTime *m_time;
 
     QAudioOutput *audioOutput;
     QIODevice *outputDevice;
 
     // 音频相关结构体初始化
-    void initializeFFmpeg(const QString &filePath);
+    int initializeFFmpeg(const QString &filePath);
     void cleanupFFmpeg();
 
     // 音频输出设备初始化
     void initializeAudioOutput();
 
 public:
-    explicit AudioThread();
+    explicit AudioThread(int *_type, QTime *_time);
     ~AudioThread();
 
     void setAudioPath(const QString &filePath);
     qint64 getAudioFrameCount();
+
+    inline int getElapsed_AndUpdate(int &last);
 };

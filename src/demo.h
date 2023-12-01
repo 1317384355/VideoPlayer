@@ -6,18 +6,6 @@
 #include <QSlider>
 #include <QMouseEvent>
 #include "videoThread.h"
-#include <opencv2/opencv.hpp>
-
-enum CONTL_TYPE
-{
-    NONE,
-    PLAY,
-    PAUSE,
-    RESUME,
-    END,
-};
-
-extern CONTL_TYPE m_type;
 
 class CLabel : public QLabel
 {
@@ -113,12 +101,18 @@ private slots:
     // 响应拖动进度条, 当鼠标松开时恢复播放状态
     void endSeek();
 
+    // 强制关闭
+    void terminatePlay();
+
 private:
     CLabel *label;
     QPixmap pix;
     double ratio;
     VideoSlider *slider;
     VideoThread *video_th;
+    QTime *m_time;
+
+    int m_type;
 
     bool isPlay = false; // 保存拖动进度条前视频播放状态
 
@@ -132,8 +126,6 @@ public:
 
     void showVideo(const QString &path);
     void changePlayState();
-    // 强制关闭
-    void terminatePlay();
 
     int showPic(const QString &path);
 };

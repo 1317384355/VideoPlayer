@@ -3,9 +3,6 @@
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QVBoxLayout>
-#include <QDebug>
-
-CONTL_TYPE m_type = CONTL_TYPE::NONE;
 
 using namespace cv;
 
@@ -59,17 +56,16 @@ void CMediaDialog::receviceFrame(int curFrame, cv::Mat frame)
 
 void CMediaDialog::showVideo(const QString &path)
 {
-
-    AudioThread *thread = new AudioThread;
-    thread->setAudioPath(path);
-    thread->getAudioFrameCount();
-
     slider->show();
+    slider->setValue(0);
 
-    video_th = new VideoThread;
+    m_time = new QTime(QTime::currentTime());
+    AudioThread *audio_th = new AudioThread(&m_type, m_time);
+    audio_th->setAudioPath(path);
+
+    video_th = new VideoThread(&m_type, m_time);
     video_th->setVideoPath(path);
     slider->setRange(0, video_th->getVideoFrameCount());
-    slider->setValue(0);
 
     connect(video_th, &VideoThread::sendFrame, this, &CMediaDialog::receviceFrame, Qt::DirectConnection); //  Qt::DirectConnection 必须
 
@@ -77,13 +73,17 @@ void CMediaDialog::showVideo(const QString &path)
 
     connect(slider, &VideoSlider::sliderClicked, this, &CMediaDialog::startSeek);
     connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
+    connect(slider, &VideoSlider::sliderMoved, audio_th, &AudioThread::setCurFrame);
     connect(slider, &VideoSlider::sliderReleased, this, &CMediaDialog::endSeek);
 
     connect(this, &CMediaDialog::startPlay, video_th, &VideoThread::startPlay);
-    connect(this, &CMediaDialog::startPlay, thread, &AudioThread::startPlay);
+    connect(this, &CMediaDialog::startPlay, audio_th, &AudioThread::startPlay);
+    connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
 
+    m_type = CONTL_TYPE::PLAY;
     emit this->startPlay();
     this->exec();
+    this->disconnect();
 }
 
 void CMediaDialog::changePlayState()
@@ -95,11 +95,15 @@ void CMediaDialog::changePlayState()
         break;
 
     case CONTL_TYPE::PLAY:
-
         m_type = CONTL_TYPE::PAUSE;
         break;
 
     case CONTL_TYPE::PAUSE:
+        video_th->resume();
+        m_type = CONTL_TYPE::PLAY;
+        break;
+
+    case CONTL_TYPE::RESUME:
         m_type = CONTL_TYPE::PLAY;
         break;
 
