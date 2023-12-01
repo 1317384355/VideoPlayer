@@ -1,8 +1,7 @@
 #pragma once
 #include <opencv2/opencv.hpp>
 #include <QThread>
-#include <queue>
-#include <QMutex>
+#include <QElapsedTimer>
 
 struct CFrame
 {
@@ -29,19 +28,16 @@ public slots:
     void setCurFrame(int _curFrame);
 
 private:
-    std::queue<CFrame *> *m_queue;
     double last_pts = 0;
-    QMutex m_mutex;
+    QElapsedTimer *m_time;
     int *m_type;
     QThread *m_thread;      // 解码视频线程
     cv::VideoCapture m_cap; // 解码视频对象实例
     cv::Mat m_frame;        // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
     int curFrame = 0;       // 当前帧进度
 
-    inline cv::Mat getNextFrame();
-
 public:
-    VideoThread(std::queue<CFrame *> *_queue, int *_type);
+    VideoThread(int *_type, QElapsedTimer *_time);
     ~VideoThread();
 
     // 设置视频路径

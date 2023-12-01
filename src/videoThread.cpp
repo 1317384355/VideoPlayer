@@ -8,7 +8,7 @@
 using namespace cv;
 using namespace std;
 
-VideoThread::VideoThread(queue<CFrame *> *_queue, int *_type) : m_queue(_queue), m_type(_type)
+VideoThread::VideoThread(int *_type, QElapsedTimer *_time) : m_type(_type), m_time(_time)
 {
 
     m_thread = new QThread;
@@ -49,39 +49,27 @@ void VideoThread::runPlay()
         m_cap.set(CAP_PROP_POS_FRAMES, curFrame);
         *m_type = CONTL_TYPE::PLAY;
     }
-    Mat frame;
+
     while (*m_type == CONTL_TYPE::PLAY)
     {
-        if (m_cap.read(frame))
+        if (m_cap.read(m_frame))
         {
             curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-
-            m_queue->push(new CFrame(m_frame, m_cap.get(CAP_PROP_POS_MSEC)));
+            int sleepTime = m_cap.get(CAP_PROP_POS_MSEC) - m_time->elapsed() - 1;
+            if (sleepTime > 0)
+            {
+                QThread::msleep(sleepTime);
+            }
+            emit sendFrame(curFrame, m_frame);
         }
         else
         {
-            *m_type = CONTL_TYPE::END;
+            // *m_type = CONTL_TYPE::END;
+            // emit finishPlay();
             break;
         }
-
-        if (m_queue->size() > capacity)
-        {
-            QWaitCondition wait;
-            wait.wait(&m_mutex, 1000);
-        }
     }
-}
-
-inline Mat VideoThread::getNextFrame()
-{
-    Mat frame;
-    if (m_cap.read(frame))
-    {
-        curFrame++;
-        cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-    }
-    return frame;
 }
 
 void VideoThread::setCurFrame(int _curFrame)
