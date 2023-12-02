@@ -59,11 +59,10 @@ void CMediaDialog::showVideo(const QString &path)
     slider->show();
     slider->setValue(0);
 
-    m_time = new QTime(QTime::currentTime());
-    AudioThread *audio_th = new AudioThread(&m_type, m_time);
+    AudioThread *audio_th = new AudioThread(&m_type);
     audio_th->setAudioPath(path);
 
-    video_th = new VideoThread(&m_type, m_time);
+    video_th = new VideoThread(&m_type, audio_th);
     video_th->setVideoPath(path);
     slider->setRange(0, video_th->getVideoFrameCount());
 

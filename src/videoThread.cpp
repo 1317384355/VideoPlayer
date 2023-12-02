@@ -3,9 +3,8 @@
 using namespace cv;
 using namespace std;
 
-VideoThread::VideoThread(int *_type, QTime *_time) : m_type(_type), m_time(_time)
+VideoThread::VideoThread(const int *_type, const AudioThread *_audio) : m_type(_type), m_audio(_audio)
 {
-
     m_thread = new QThread;
     this->moveToThread(m_thread);
     connect(this, &VideoThread::startPlay, this, &VideoThread::runPlay);
@@ -48,14 +47,13 @@ void VideoThread::runPlay()
     if (*m_type == NONE)
         return;
 
-    int last_ = -1000; // 保证第一帧无需等待
     while (*m_type == CONTL_TYPE::PLAY)
     {
         if (m_cap.read(m_frame))
         {
             curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-            int sleepTime = getDiffTime() - getElapsed_AndUpdate(last_, m_time) - 1;
+            int sleepTime = m_cap.get(CAP_PROP_POS_MSEC) - m_audio->getAudioClock();
             if (sleepTime > 0)
             {
                 // qDebug() << "video:" << sleepTime;
@@ -84,12 +82,4 @@ void VideoThread::setCurFrame(int _curFrame)
             emit VideoThread::sendFrame(curFrame, m_frame);
         }
     }
-}
-
-inline int VideoThread::getDiffTime()
-{
-    int cur_pts = m_cap.get(CAP_PROP_POS_MSEC);
-    int ret = cur_pts - last_pts;
-    last_pts = m_cap.get(CAP_PROP_POS_MSEC);
-    return ret;
 }

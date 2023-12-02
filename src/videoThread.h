@@ -1,5 +1,5 @@
 #pragma once
-#include "playerCommand.h"
+#include "audioThread.h"
 #include <opencv2/opencv.hpp>
 
 struct CFrame
@@ -28,24 +28,21 @@ public slots:
     void setCurFrame(int _curFrame);
 
 private:
-    QTime *m_time;
-    int *m_type;
-    QThread *m_thread;      // 解码视频线程
-    cv::VideoCapture m_cap; // 解码视频对象实例
-    cv::Mat m_frame;        // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
-    int curFrame = 0;       // 当前帧进度
-    int last_pts = 0;
+    const AudioThread *m_audio; // 仅用于获取时钟
+    const int *m_type;          // 同步播放状态
+    QThread *m_thread;          // 解码视频线程
+    cv::VideoCapture m_cap;     // 解码视频对象实例
+    cv::Mat m_frame;            // 暂存当前帧画面, 转换格式, 然后发送至播放窗口
+    int curFrame = 0;           // 当前帧进度
 
 public:
-    VideoThread(int *_type, QTime *_time);
+    VideoThread(const int *_type, const AudioThread *_audio);
     ~VideoThread();
 
     bool resume();
 
     // 设置视频路径
     bool setVideoPath(const QString &path);
-
-    inline int getDiffTime();
 
     // 得到当前视频总帧数
     int getVideoFrameCount();

@@ -2,15 +2,15 @@
 #include "audioThread.h"
 
 #define MAX_AUDIO_FRAME_SIZE 192000
-AudioThread::AudioThread(int *_type, QTime *_time) : m_type(_type), m_time(_time),
-                                                     formatContext(nullptr),
-                                                     codecContext(nullptr),
-                                                     frame(nullptr),
-                                                     swrContext(nullptr),
-                                                     convertedAudioBuffer(nullptr),
-                                                     audioOutput(nullptr),
-                                                     outputDevice(nullptr),
-                                                     audioStreamIndex(-1)
+AudioThread::AudioThread(const int *_type) : m_type(_type),
+                                             formatContext(nullptr),
+                                             codecContext(nullptr),
+                                             frame(nullptr),
+                                             swrContext(nullptr),
+                                             convertedAudioBuffer(nullptr),
+                                             audioOutput(nullptr),
+                                             outputDevice(nullptr),
+                                             audioStreamIndex(-1)
 {
     avformat_network_init(); // Initialize FFmpeg network components
     m_thread = new QThread;
@@ -30,7 +30,7 @@ void AudioThread::setAudioPath(const QString &filePath)
     initializeAudioOutput();
 }
 
-qint64 AudioThread::getAudioFrameCount()
+qint64 AudioThread::getAudioFrameCount() const
 {
     qint64 ret = formatContext->streams[audioStreamIndex]->nb_frames;
     qDebug() << "audioRet:" << ret;
@@ -39,9 +39,6 @@ qint64 AudioThread::getAudioFrameCount()
 
 void AudioThread::runPlay()
 {
-
-    int last_ = -1000; // 保证第一帧无需等待
-    // Your processing loop can go here
     while (*m_type == CONTL_TYPE::PLAY)
     {
         if (av_read_frame(formatContext, &packet) < 0)
@@ -60,11 +57,11 @@ void AudioThread::runPlay()
                                                     frame->nb_samples * 2,
                                                     (const uint8_t **)frame->data,
                                                     frame->nb_samples);
-                    int sleepTime = getElapsed_AndUpdate(last_) - 1;
-                    if (sleepTime > 0)
+                    while (audioOutput->bytesFree() < convertedSize * 4)
                     {
-                        qDebug() << "sleepTime:" << sleepTime;
-                        QThread::msleep(15);
+                        if (*m_type != CONTL_TYPE::PLAY)
+                            return;
+                        QThread::msleep(10);
                     }
                     outputDevice->write(reinterpret_cast<const char *>(convertedAudioBuffer),
                                         convertedSize * 4); // Assuming 16-bit audio
@@ -81,14 +78,13 @@ void AudioThread::setCurFrame(int _curFrame)
 {
 }
 
-inline int AudioThread::getElapsed_AndUpdate(int &last)
+double AudioThread::getAudioClock() const
 {
-    int cur_pts = av_q2d(formatContext->streams[audioStreamIndex]->time_base) * 1000 * frame->pts;
-    int cur = m_time->msecsSinceStartOfDay();
-    int ret = (cur_pts - last_pts) - ((cur - last) > 0 ? (cur - last) : 0);
-    last_pts = cur_pts;
-    last = cur;
-    return ret;
+    double cur_pts = av_q2d(formatContext->streams[audioStreamIndex]->time_base) * 1000 * frame->pts;
+    int hw_buf_size = audioOutput->bufferSize();
+    int bytes_per_sec = codecContext->sample_rate * codecContext->ch_layout.nb_channels * 2;
+
+    return (cur_pts - static_cast<double>(hw_buf_size) / bytes_per_sec);
 }
 
 int AudioThread::initializeFFmpeg(const QString &filePath)

@@ -11,6 +11,18 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
+#include <QDebug>
+#include <QThread>
+
+enum CONTL_TYPE
+{
+    NONE,
+    PLAY,
+    PAUSE,
+    RESUME,
+    END,
+};
+
 class AudioThread : public QObject
 {
     Q_OBJECT
@@ -36,8 +48,7 @@ private:
     int last_pts = 0;
 
     QThread *m_thread;
-    int *m_type;
-    QTime *m_time;
+    const int *m_type;
 
     QAudioOutput *audioOutput;
     QIODevice *outputDevice;
@@ -50,11 +61,12 @@ private:
     void initializeAudioOutput();
 
 public:
-    explicit AudioThread(int *_type, QTime *_time);
+    explicit AudioThread(const int *_type);
     ~AudioThread();
 
     void setAudioPath(const QString &filePath);
-    qint64 getAudioFrameCount();
+    qint64 getAudioFrameCount() const;
 
-    inline int getElapsed_AndUpdate(int &last);
+    // 得到当前当前音频的时钟进度, 不可作为槽函数
+    double getAudioClock() const;
 };
