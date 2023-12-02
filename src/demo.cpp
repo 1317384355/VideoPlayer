@@ -43,11 +43,11 @@ CMediaDialog::~CMediaDialog()
     terminatePlay();
 }
 
-void CMediaDialog::receviceFrame(int curFrame, cv::Mat frame)
+void CMediaDialog::receviceFrame(int curMs, cv::Mat frame)
 {
     if (slider->getIsMove() == false)
     {
-        slider->setValue(curFrame);
+        slider->setValue(curMs);
     }
     pix = QPixmap::fromImage(QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888));
     ratio = (double)pix.width() / pix.height();
@@ -64,7 +64,8 @@ void CMediaDialog::showVideo(const QString &path)
 
     video_th = new VideoThread(&m_type, audio_th);
     video_th->setVideoPath(path);
-    slider->setRange(0, video_th->getVideoFrameCount());
+    video_th->getVideoDuration();
+    slider->setRange(0, audio_th->getAudioDuration());
 
     connect(video_th, &VideoThread::sendFrame, this, &CMediaDialog::receviceFrame, Qt::DirectConnection); //  Qt::DirectConnection 必须
 
@@ -79,7 +80,7 @@ void CMediaDialog::showVideo(const QString &path)
     connect(this, &CMediaDialog::startPlay, audio_th, &AudioThread::startPlay);
     connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
 
-    m_type = CONTL_TYPE::PLAY;
+    m_type = CONTL_TYPE::RESUME;
     emit this->startPlay();
     this->exec();
     this->disconnect();
@@ -98,11 +99,11 @@ void CMediaDialog::changePlayState()
         break;
 
     case CONTL_TYPE::PAUSE:
-        video_th->resume();
         m_type = CONTL_TYPE::PLAY;
         break;
 
     case CONTL_TYPE::RESUME:
+        video_th->resume();
         m_type = CONTL_TYPE::PLAY;
         break;
 
@@ -121,6 +122,7 @@ void CMediaDialog::startSeek()
 void CMediaDialog::endSeek()
 {
     m_type = (isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
+    qDebug() << "endSeek" << m_type;
     emit CMediaDialog::startPlay();
 }
 

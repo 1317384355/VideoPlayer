@@ -34,38 +34,46 @@ private slots:
 public slots:
     // 响应拖动进度条, 跳转到帧并返回这一帧画面
     void setCurFrame(int _curFrame);
+    // 开始播放
     void runPlay();
 
 private:
-    AVFormatContext *formatContext;
+    AVFormatContext *formatContext; // 用于处理媒体文件格式的结构, 包含了许多用于描述文件格式和元数据的信息
     AVCodecContext *codecContext;
-    AVFrame *frame;
+    AVFrame *frame; // 帧
     SwrContext *swrContext;
 
     uint8_t *convertedAudioBuffer;
     AVPacket packet;
     int audioStreamIndex;
-    int last_pts = 0;
 
-    QThread *m_thread;
-    const int *m_type;
+    double curPts;
+    double time_base_q2d;
+
+    QThread *m_thread; // 播放线程
+    const int *m_type; // 控制播放状态
 
     QAudioOutput *audioOutput;
-    QIODevice *outputDevice;
+    QIODevice *outputDevice; // 音频输出流
 
     // 音频相关结构体初始化
-    int initializeFFmpeg(const QString &filePath);
-    void cleanupFFmpeg();
-
+    int init_FFmpeg(const QString &filePath);
     // 音频输出设备初始化
-    void initializeAudioOutput();
+    void init_AudioOutput();
+    void clean();
 
 public:
     explicit AudioThread(const int *_type);
     ~AudioThread();
 
     void setAudioPath(const QString &filePath);
-    qint64 getAudioFrameCount() const;
+
+    bool resume();
+
+    // 得到总音频帧数
+    int64_t getAudioFrameCount() const;
+
+    int64_t getAudioDuration() const;
 
     // 得到当前当前音频的时钟进度, 不可作为槽函数
     double getAudioClock() const;

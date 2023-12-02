@@ -19,26 +19,27 @@ VideoThread::~VideoThread()
 
 bool VideoThread::resume()
 {
-    curFrame = 0;
-    return m_cap.set(CAP_PROP_POS_FRAMES, curFrame);
+    curPts = 0;
+    return m_cap.set(CAP_PROP_POS_FRAMES, curPts);
 }
 
 bool VideoThread::setVideoPath(const QString &path)
 {
-    curFrame = 0;
+    curPts = 0;
     return m_cap.open(path.toStdString());
 }
 
-int VideoThread::getVideoFrameCount()
+double VideoThread::getVideoFrameCount()
 {
-    int ret = m_cap.get(CAP_PROP_FRAME_COUNT);
+    double ret = m_cap.get(CAP_PROP_FRAME_COUNT);
     qDebug() << ret;
     return ret;
 }
 
-int VideoThread::getVideoDuration()
+double VideoThread::getVideoDuration()
 {
-    int ret = m_cap.get(CAP_PROP_FRAME_COUNT) / m_cap.get(CAP_PROP_FPS);
+    double ret = m_cap.get(CAP_PROP_FRAME_COUNT) / m_cap.get(CAP_PROP_FPS) * 1000;
+    qDebug() << m_cap.get(CAP_PROP_FRAME_COUNT) << m_cap.get(CAP_PROP_FPS) << ret;
     return ret;
 }
 
@@ -51,15 +52,15 @@ void VideoThread::runPlay()
     {
         if (m_cap.read(m_frame))
         {
-            curFrame++;
+            curPts = m_cap.get(CAP_PROP_POS_MSEC);
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-            int sleepTime = m_cap.get(CAP_PROP_POS_MSEC) - m_audio->getAudioClock();
+            int sleepTime = curPts - m_audio->getAudioClock();
             if (sleepTime > 0)
             {
                 // qDebug() << "video:" << sleepTime;
                 QThread::msleep(sleepTime);
             }
-            emit sendFrame(curFrame, m_frame);
+            emit sendFrame(curPts, m_frame);
         }
         else
         {
@@ -69,17 +70,17 @@ void VideoThread::runPlay()
     }
 }
 
-void VideoThread::setCurFrame(int _curFrame)
+void VideoThread::setCurFrame(int _curPts)
 {
-    curFrame = _curFrame;
+    int curFrame = _curPts / 1000.0 * m_cap.get(CAP_PROP_FPS);
+    qDebug() << "curFrame:" << curFrame;
     if (*m_type != CONTL_TYPE::PLAY)
     {
         m_cap.set(CAP_PROP_POS_FRAMES, curFrame);
         if (m_cap.read(m_frame))
         {
-            curFrame++;
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-            emit VideoThread::sendFrame(curFrame, m_frame);
+            emit VideoThread::sendFrame(_curPts, m_frame);
         }
     }
 }
