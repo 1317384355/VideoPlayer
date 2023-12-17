@@ -35,7 +35,7 @@ CMediaDialog::CMediaDialog(QWidget *parent)
     slider->hide();
     m_layout->addWidget(slider);
 
-    this->showVideo("./qrc/1.mp4");
+    this->showVideo("F:/Videos/药屋少女/[Comicat&Romanticat][Kusuriya no Hitorigoto][07][1080P][GB&JP][MP4].mp4");
 }
 
 CMediaDialog::~CMediaDialog()
@@ -45,7 +45,7 @@ CMediaDialog::~CMediaDialog()
 
 void CMediaDialog::receviceFrame(int curMs, cv::Mat frame)
 {
-    if (slider->getIsMove() == false)
+    if (slider->getIsPress() == false)
     {
         slider->setValue(curMs);
     }
@@ -59,7 +59,7 @@ void CMediaDialog::showVideo(const QString &path)
     slider->show();
     slider->setValue(0);
 
-    AudioThread *audio_th = new AudioThread(&m_type);
+    audio_th = new AudioThread(&m_type);
     audio_th->setAudioPath(path);
 
     video_th = new VideoThread(&m_type, audio_th);
@@ -80,7 +80,7 @@ void CMediaDialog::showVideo(const QString &path)
     connect(this, &CMediaDialog::startPlay, audio_th, &AudioThread::startPlay);
     connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
 
-    m_type = CONTL_TYPE::RESUME;
+    m_type = CONTL_TYPE::PLAY;
     emit this->startPlay();
     this->exec();
     this->disconnect();
@@ -104,6 +104,7 @@ void CMediaDialog::changePlayState()
 
     case CONTL_TYPE::RESUME:
         video_th->resume();
+        audio_th->resume();
         m_type = CONTL_TYPE::PLAY;
         break;
 
@@ -122,7 +123,6 @@ void CMediaDialog::startSeek()
 void CMediaDialog::endSeek()
 {
     m_type = (isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
-    qDebug() << "endSeek" << m_type;
     emit CMediaDialog::startPlay();
 }
 

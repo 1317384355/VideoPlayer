@@ -29,6 +29,7 @@ bool AudioThread::resume()
 {
     curPts = 0;
     av_seek_frame(formatContext, audioStreamIndex, 0, AVSEEK_FLAG_BACKWARD);
+    return true;
 }
 
 void AudioThread::setAudioPath(const QString &filePath)
@@ -102,43 +103,11 @@ void AudioThread::runPlay()
 
 void AudioThread::setCurFrame(int _curPts)
 {
-    curPts = _curPts;
     if (*m_type != CONTL_TYPE::PLAY)
     {
-        av_seek_frame(formatContext, audioStreamIndex, _curPts / 1000.0 / time_base_q2d, AVSEEK_FLAG_FRAME);
-
-        // 确保当前 packet 为音频流
-        if (packet.stream_index == audioStreamIndex)
-        {
-            // 将音频帧发送到音频解码器
-            if (avcodec_send_packet(codecContext, &packet) == 0)
-            {
-                // 接收解码后的音频帧
-                while (avcodec_receive_frame(codecContext, frame) == 0)
-                {
-                    // 将音频帧转换为 PCM 格式
-                    // convertedSize：转换后音频数据的大小
-                    int convertedSize = swr_convert(swrContext,                    // 转换工具?
-                                                    &convertedAudioBuffer,         // 输出
-                                                    frame->nb_samples * 2,         // 输出大小
-                                                    (const uint8_t **)frame->data, // 输入
-                                                    frame->nb_samples);            // 输入大小
-
-                    // // 让音频连续按轴连续播放, 根据 QAudioOutput 的剩余缓存空间大小判断是否继续写入
-                    // while (audioOutput->bytesFree() < convertedSize * 4)
-                    // { // 不懂为啥是 * 4, 这个数是试出来的
-
-                    //     if (*m_type != CONTL_TYPE::PLAY)
-                    //         return; // 这个写法可能会导致暂停时再播放时丢失当前帧, 目前不会解决
-
-                    //     QThread::msleep(10);
-                    // }
-                    // 将音频数据写入输出流, 即播放当前音频帧
-                    outputDevice->write(reinterpret_cast<const char *>(convertedAudioBuffer),
-                                        convertedSize * 4); // 此处 * 4同上
-                }
-            }
-        }
+        curPts = _curPts;
+        qDebug() << "curPts: " << curPts;
+        av_seek_frame(formatContext, audioStreamIndex, curPts / 1000.0 / time_base_q2d, AVSEEK_FLAG_FRAME);
     }
 }
 
