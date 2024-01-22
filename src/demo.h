@@ -7,12 +7,15 @@
 #include <QMouseEvent>
 #include "videoThread.h"
 #include "audioThread.h"
+#include <QMenu>
 
 class CLabel : public QLabel
 {
     Q_OBJECT
 public:
     explicit CLabel(QWidget *parent = nullptr) : QLabel(parent) {}
+
+    QMenu *menu;
 
 signals:
     void clicked();
@@ -24,7 +27,10 @@ protected:
         if (event->pos().x() >= 0 && event->pos().x() <= this->width() &&
             event->pos().y() >= 0 && event->pos().y() <= this->height())
         {
-            emit CLabel::clicked();
+            if (event->button() == Qt::LeftButton)
+                emit CLabel::clicked();
+            else if (event->button() == Qt::RightButton)
+                menu->exec(event->globalPos());
         }
     }
 };
@@ -65,11 +71,11 @@ protected:
             int value = pos * (maximum() - minimum()) + minimum();
             setValue(value);
 
-            if (qAbs(value - this->lastLocation) > (one_percent * 5))
-            {
-                lastLocation = value;
-                emit VideoSlider::sliderMoved(value);
-            }
+            // if (qAbs(value - this->lastLocation) > (one_percent * 5))
+            // {
+            //     lastLocation = value;
+            //     emit VideoSlider::sliderMoved(value);
+            // }
         }
     }
 
@@ -103,7 +109,7 @@ signals:
     void startPlay();
 
 private slots:
-    void receviceFrame(int curFrame, cv::Mat frame);
+    void receviceFrame(int curFrame, cv::Mat &frame);
 
     // 响应拖动进度条, 当鼠标压下时暂停, 并保存播放状态
     void startSeek();

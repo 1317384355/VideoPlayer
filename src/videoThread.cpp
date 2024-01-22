@@ -1,4 +1,5 @@
 #include "videoThread.h"
+#include <opencv2/core/cuda.hpp>
 
 using namespace cv;
 using namespace std;
@@ -50,6 +51,12 @@ void VideoThread::runPlay()
     {
         if (m_cap.read(m_frame))
         {
+            if(isSave)
+            {
+                QString path = QString("./save/%1.png").arg(curPts);
+                if(imwrite(path.toStdString(),m_frame) == false)
+                    qDebug()<<path;
+            }
             curPts = m_cap.get(CAP_PROP_POS_MSEC);
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
             int sleepTime = curPts - m_audio->getAudioClock();

@@ -10,7 +10,7 @@ CMediaDialog::CMediaDialog(QWidget *parent)
     : QDialog(parent)
 {
     this->setWindowTitle("图片预览");
-    this->resize(300, 300);
+    this->resize(640, 360);
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     this->setLayout(layout);
@@ -43,7 +43,7 @@ CMediaDialog::~CMediaDialog()
     terminatePlay();
 }
 
-void CMediaDialog::receviceFrame(int curMs, cv::Mat frame)
+void CMediaDialog::receviceFrame(int curMs, cv::Mat &frame)
 {
     if (slider->getIsPress() == false)
     {
@@ -66,6 +66,18 @@ void CMediaDialog::showVideo(const QString &path)
     video_th->setVideoPath(path);
     video_th->getVideoDuration();
     slider->setRange(0, audio_th->getAudioDuration());
+
+    this->label->menu = new QMenu(this);
+    auto actSS = new QAction("开始保存", this->label->menu);
+    this->label->menu->addAction(actSS);
+    auto actES = new QAction("结束保存", this->label->menu);
+    this->label->menu->addAction(actES);
+    connect(actSS, &QAction::triggered, [=]() { //
+        video_th->startSave();
+    });
+    connect(actES, &QAction::triggered, [=]() { //
+        video_th->endSava();
+    });
 
     connect(video_th, &VideoThread::sendFrame, this, &CMediaDialog::receviceFrame, Qt::DirectConnection); //  Qt::DirectConnection 必须
 
