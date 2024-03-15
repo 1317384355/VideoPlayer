@@ -134,8 +134,8 @@ private:
     bool isPlay = false; // 保存拖动进度条前视频播放状态
 
 protected:
-    void resizeEvent(QResizeEvent *event);
-    void paintEvent(QPaintEvent *event);
+    // void resizeEvent(QResizeEvent *event);
+    // void paintEvent(QPaintEvent *event);
 
 public:
     CMediaDialog(QWidget *parent = nullptr);

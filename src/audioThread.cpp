@@ -48,7 +48,8 @@ int64_t AudioThread::getAudioFrameCount() const
 
 int64_t AudioThread::getAudioDuration() const
 {
-    int64_t ret = (time_base_q2d * 1000 * formatContext->streams[audioStreamIndex]->duration);
+    // 音频流的总时长 us
+    int64_t ret = (formatContext->duration / (int64_t)(AV_TIME_BASE / 1000));
     qDebug() << "audioDuration:" << ret;
     return ret;
 }
@@ -128,22 +129,18 @@ double AudioThread::getAudioClock() const
 
 int AudioThread::init_FFmpeg(const QString &filePath)
 {
-    int error = 0;
-
-    do
+    try
     {
         formatContext = avformat_alloc_context();
         if (avformat_open_input(&formatContext, filePath.toUtf8().constData(),
                                 nullptr, nullptr) != 0)
         {
-            error = 1;
-            break;
+            throw OPEN_STREAM_ERROR;
         }
 
         if (avformat_find_stream_info(formatContext, nullptr) < 0)
         {
-            error = 2;
-            break;
+            throw 2;
         }
 
         // Find the audio stream
@@ -159,8 +156,7 @@ int AudioThread::init_FFmpeg(const QString &filePath)
 
         if (audioStreamIndex == -1)
         {
-            error = 3;
-            break;
+            throw 3;
         }
 
         // Initialize audio codec context
@@ -168,8 +164,7 @@ int AudioThread::init_FFmpeg(const QString &filePath)
         avcodec_parameters_to_context(codecContext, formatContext->streams[audioStreamIndex]->codecpar);
         if (avcodec_open2(codecContext, avcodec_find_decoder(codecContext->codec_id), nullptr) < 0)
         {
-            error = 4;
-            break;
+            throw 4;
         }
 
         // Initialize audio frame
@@ -184,25 +179,25 @@ int AudioThread::init_FFmpeg(const QString &filePath)
                                      &codecContext->ch_layout, codecContext->sample_fmt, codecContext->sample_rate,
                                      0, nullptr))
         {
-            error = 5;
-            break;
+            throw 5;
         }
         if (!swrContext || swr_init(swrContext) < 0)
         {
-            error = 6;
-            break;
+            throw 6;
         }
 
         // Initialize converted audio buffer
         convertedAudioBuffer = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE);
 
         time_base_q2d = av_q2d(formatContext->streams[audioStreamIndex]->time_base);
+    }
+    catch (int error)
+    {
+        clean();
+        qDebug() << "there is error with init_FFmpeg(), type:" << error;
         return error;
-
-    } while (1);
-
-    clean();
-    return error;
+    }
+    return 0;
 }
 
 void AudioThread::init_AudioOutput()

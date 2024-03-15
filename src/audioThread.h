@@ -36,6 +36,12 @@ public slots:
     void setCurFrame(int _curFrame);
     // 开始播放
     void runPlay();
+public:
+    enum FFMPEG_INIT_ERROR{
+        NO_ERROR = 0,
+        OPEN_STREAM_ERROR,
+
+    };
 
 private:
     AVFormatContext *formatContext; // 用于处理媒体文件格式的结构, 包含了许多用于描述文件格式和元数据的信息

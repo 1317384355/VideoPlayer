@@ -35,7 +35,7 @@ CMediaDialog::CMediaDialog(QWidget *parent)
     slider->hide();
     m_layout->addWidget(slider);
 
-    this->showVideo("F:/Videos/药屋少女/[Comicat&Romanticat][Kusuriya no Hitorigoto][07][1080P][GB&JP][MP4].mp4");
+    this->showVideo("F:/Videos/不死不幸/[LoliHouse] Undead Unluck - 05 [WebRip 1080p HEVC-10bit AAC ASSx2].mkv");
 }
 
 CMediaDialog::~CMediaDialog()
@@ -50,8 +50,7 @@ void CMediaDialog::receviceFrame(int curMs, cv::Mat &frame)
         slider->setValue(curMs);
     }
     pix = QPixmap::fromImage(QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888));
-    ratio = (double)pix.width() / pix.height();
-    update();
+    label->setPixmap(pix.scaled(label->size(), Qt::KeepAspectRatio));
 }
 
 void CMediaDialog::showVideo(const QString &path)
@@ -157,28 +156,28 @@ int CMediaDialog::showPic(const QString &path)
     return this->exec();
 }
 
-void CMediaDialog::resizeEvent(QResizeEvent *event)
-{
-    double widgetRatio = label->width() / 1.0 / label->height();
-    if (widgetRatio > ratio)
-    {
-        label->setPixmap(pix.scaled((label->height()) * ratio, (label->height())));
-    }
-    else
-    {
-        label->setPixmap(pix.scaled((label->width()), (label->width()) / ratio));
-    }
-}
+// void CMediaDialog::resizeEvent(QResizeEvent *event)
+// {
+//     double widgetRatio = label->width() / 1.0 / label->height();
+//     if (widgetRatio > ratio)
+//     {
+//         label->setPixmap(pix.scaled((label->height()) * ratio, (label->height())));
+//     }
+//     else
+//     {
+//         label->setPixmap(pix.scaled((label->width()), (label->width()) / ratio));
+//     }
+// }
 
-void CMediaDialog::paintEvent(QPaintEvent *event)
-{
-    double widgetRatio = label->width() / 1.0 / label->height();
-    if (widgetRatio > ratio)
-    {
-        label->setPixmap(pix.scaled((label->height()) * ratio, (label->height())));
-    }
-    else
-    {
-        label->setPixmap(pix.scaled((label->width()), (label->width()) / ratio));
-    }
-}
+// void CMediaDialog::paintEvent(QPaintEvent *event)
+// {
+//     double widgetRatio = label->width() / 1.0 / label->height();
+//     if (widgetRatio > ratio)
+//     {
+//         label->setPixmap(pix.scaled((label->height()) * ratio, (label->height())));
+//     }
+//     else
+//     {
+//         label->setPixmap(pix.scaled((label->width()), (label->width()) / ratio));
+//     }
+// }
