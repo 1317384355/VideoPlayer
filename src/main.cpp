@@ -1,11 +1,13 @@
-#include <QAPPlication>
 #include "demo.h"
+#include <QAPPlication>
+#include <QDialog>
 
 int main(int argc, char *argv[])
 {
     // QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication a(argc, argv);
-    CMediaDialog w;
+
+    demo w;
     w.show();
-    return 0;
+    return a.exec();
 }

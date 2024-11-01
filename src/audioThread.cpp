@@ -35,8 +35,8 @@ bool AudioThread::resume()
 void AudioThread::setAudioPath(const QString &filePath)
 {
     clean();
-    init_FFmpeg(filePath);
-    init_AudioOutput();
+    if (NO_ERROR == init_FFmpeg(filePath))
+        init_AudioOutput();
 }
 
 int64_t AudioThread::getAudioFrameCount() const
@@ -48,7 +48,7 @@ int64_t AudioThread::getAudioFrameCount() const
 
 int64_t AudioThread::getAudioDuration() const
 {
-    // 音频流的总时长 us
+    // 音频流的总时长 ms
     int64_t ret = (formatContext->duration / (int64_t)(AV_TIME_BASE / 1000));
     qDebug() << "audioDuration:" << ret;
     return ret;
@@ -84,7 +84,6 @@ void AudioThread::runPlay()
                     // 让音频连续按轴连续播放, 根据 QAudioOutput 的剩余缓存空间大小判断是否继续写入
                     while (audioOutput->bytesFree() < convertedSize * 4)
                     { // 不懂为啥是 * 4, 这个数是试出来的
-
                         if (*m_type != CONTL_TYPE::PLAY)
                             return; // 这个写法可能会导致暂停时再播放时丢失当前帧, 目前不会解决
 
@@ -140,7 +139,7 @@ int AudioThread::init_FFmpeg(const QString &filePath)
 
         if (avformat_find_stream_info(formatContext, nullptr) < 0)
         {
-            throw 2;
+            throw FIND_INFO_ERROR;
         }
 
         // Find the audio stream
@@ -156,7 +155,7 @@ int AudioThread::init_FFmpeg(const QString &filePath)
 
         if (audioStreamIndex == -1)
         {
-            throw 3;
+            throw FIND_STREAM_ERROR;
         }
 
         // Initialize audio codec context
@@ -164,7 +163,7 @@ int AudioThread::init_FFmpeg(const QString &filePath)
         avcodec_parameters_to_context(codecContext, formatContext->streams[audioStreamIndex]->codecpar);
         if (avcodec_open2(codecContext, avcodec_find_decoder(codecContext->codec_id), nullptr) < 0)
         {
-            throw 4;
+            throw INIT_CODEC_CONTEXT_ERROR;
         }
 
         // Initialize audio frame
@@ -179,11 +178,11 @@ int AudioThread::init_FFmpeg(const QString &filePath)
                                      &codecContext->ch_layout, codecContext->sample_fmt, codecContext->sample_rate,
                                      0, nullptr))
         {
-            throw 5;
+            throw INIT_RESAMPLER_CONTEXT_ERROR;
         }
         if (!swrContext || swr_init(swrContext) < 0)
         {
-            throw 6;
+            throw INIT_SW_RENDERER_CONTEXT;
         }
 
         // Initialize converted audio buffer
@@ -191,7 +190,7 @@ int AudioThread::init_FFmpeg(const QString &filePath)
 
         time_base_q2d = av_q2d(formatContext->streams[audioStreamIndex]->time_base);
     }
-    catch (int error)
+    catch (FFMPEG_INIT_ERROR error)
     {
         clean();
         qDebug() << "there is error with init_FFmpeg(), type:" << error;

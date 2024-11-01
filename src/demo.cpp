@@ -1,61 +1,85 @@
 #include "demo.h"
 #include "audioThread.h"
 #include <QMessageBox>
+#include <QPaintEvent>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <QApplication>
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QFileDialog>
 
 using namespace cv;
 
-CMediaDialog::CMediaDialog(QWidget *parent)
-    : QDialog(parent)
+demo::demo(QWidget *parent) : QWidget(parent)
 {
-    this->setWindowTitle("图片预览");
-    this->resize(640, 360);
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     this->setLayout(layout);
 
-    QScrollArea *scrollArea = new QScrollArea(this);
-    scrollArea->setWidgetResizable(true);
-    layout->addWidget(scrollArea);
+    // 选择视频并播放功能
+    QHBoxLayout *hLayout = new QHBoxLayout();
+    hLayout->setContentsMargins(0, 0, 0, 0);
+    QPushButton *btnSelect = new QPushButton("选择", this);
+    QLineEdit *lineEdit = new QLineEdit(this);
+    lineEdit->setReadOnly(true); // 设置只读
+    hLayout->addWidget(btnSelect);
+    hLayout->addWidget(lineEdit);
+    layout->addLayout(hLayout);
 
-    QWidget *contenter = new QWidget(scrollArea);
-    scrollArea->setWidget(contenter);
+    CMediaDialog *w = new CMediaDialog(this);
+    layout->addWidget(w);
+    this->resize(700, 400);
 
-    QVBoxLayout *m_layout = new QVBoxLayout(contenter);
-    scrollArea->setLayout(m_layout);
-    m_layout->setContentsMargins(0, 0, 0, 0);
+    // 连接槽, 选择视频并播放
+    connect(btnSelect, &QPushButton::clicked, [=]() { //
+        QString path = QFileDialog::getOpenFileName(this, "选择视频文件", "", "Video Files(*.mp4 *.avi *.mkv)");
+        if (!path.isEmpty())
+        {
+            // 仅显示文件名, 并且去掉后缀
+            lineEdit->setText(path.mid(path.lastIndexOf("/") + 1, path.lastIndexOf(".") - path.lastIndexOf("/") - 1));
+            w->showVideo(path);
+        }
+    });
+}
 
-    label = new CLabel(this);
-    label->setAlignment(Qt::AlignCenter);
-    label->setStyleSheet("QLabel{background-color: rgba(0, 0, 0, 255);}");
-    m_layout->addWidget(label);
+demo::~demo()
+{
+}
+
+CMediaDialog::CMediaDialog(QWidget *parent)
+    : QWidget(parent)
+{
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    this->setLayout(layout);
+
+    frameWidget = new FrameWidget(this);
+    layout->addWidget(frameWidget);
 
     slider = new VideoSlider(Qt::Horizontal, this);
-    slider->hide();
-    m_layout->addWidget(slider);
-
-    this->showVideo("F:/Videos/不死不幸/[LoliHouse] Undead Unluck - 05 [WebRip 1080p HEVC-10bit AAC ASSx2].mkv");
+    layout->addWidget(slider);
 }
 
 CMediaDialog::~CMediaDialog()
 {
     terminatePlay();
+    this->disconnect();
 }
 
-void CMediaDialog::receviceFrame(int curMs, cv::Mat &frame)
+void CMediaDialog::receviceFrame(int curMs, const QPixmap &frame)
 {
     if (slider->getIsPress() == false)
     {
         slider->setValue(curMs);
     }
-    pix = QPixmap::fromImage(QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888));
-    label->setPixmap(pix.scaled(label->size(), Qt::KeepAspectRatio));
+    frameWidget->setPixmap(frame);
 }
 
 void CMediaDialog::showVideo(const QString &path)
 {
-    slider->show();
+    this->show();
     slider->setValue(0);
 
     audio_th = new AudioThread(&m_type);
@@ -66,21 +90,21 @@ void CMediaDialog::showVideo(const QString &path)
     video_th->getVideoDuration();
     slider->setRange(0, audio_th->getAudioDuration());
 
-    this->label->menu = new QMenu(this);
-    auto actSS = new QAction("开始保存", this->label->menu);
-    this->label->menu->addAction(actSS);
-    auto actES = new QAction("结束保存", this->label->menu);
-    this->label->menu->addAction(actES);
-    connect(actSS, &QAction::triggered, [=]() { //
-        video_th->startSave();
-    });
-    connect(actES, &QAction::triggered, [=]() { //
-        video_th->endSava();
-    });
+    // this->label->menu = new QMenu(this);
+    // auto actSS = new QAction("开始保存", this->label->menu);
+    // this->label->menu->addAction(actSS);
+    // auto actES = new QAction("结束保存", this->label->menu);
+    // this->label->menu->addAction(actES);
+    // connect(actSS, &QAction::triggered, [=]() { //
+    //     video_th->startSave();
+    // });
+    // connect(actES, &QAction::triggered, [=]() { //
+    //     video_th->endSava();
+    // });
 
     connect(video_th, &VideoThread::sendFrame, this, &CMediaDialog::receviceFrame, Qt::DirectConnection); //  Qt::DirectConnection 必须
 
-    connect(label, &CLabel::clicked, this, &CMediaDialog::changePlayState);
+    connect(frameWidget, &FrameWidget::clicked, this, &CMediaDialog::changePlayState);
 
     connect(slider, &VideoSlider::sliderClicked, this, &CMediaDialog::startSeek);
     connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
@@ -93,8 +117,6 @@ void CMediaDialog::showVideo(const QString &path)
 
     m_type = CONTL_TYPE::PLAY;
     emit this->startPlay();
-    this->exec();
-    this->disconnect();
 }
 
 void CMediaDialog::changePlayState()
@@ -141,43 +163,3 @@ void CMediaDialog::terminatePlay()
 {
     m_type = CONTL_TYPE::END;
 }
-
-int CMediaDialog::showPic(const QString &path)
-{
-    Mat img = imread(path.toStdString());
-    if (img.empty())
-    {
-        QMessageBox::warning(this, "警告", "图片不存在");
-        return QDialog::Rejected;
-    }
-    cvtColor(img, img, COLOR_BGR2RGB);
-
-    receviceFrame(0, img);
-    return this->exec();
-}
-
-// void CMediaDialog::resizeEvent(QResizeEvent *event)
-// {
-//     double widgetRatio = label->width() / 1.0 / label->height();
-//     if (widgetRatio > ratio)
-//     {
-//         label->setPixmap(pix.scaled((label->height()) * ratio, (label->height())));
-//     }
-//     else
-//     {
-//         label->setPixmap(pix.scaled((label->width()), (label->width()) / ratio));
-//     }
-// }
-
-// void CMediaDialog::paintEvent(QPaintEvent *event)
-// {
-//     double widgetRatio = label->width() / 1.0 / label->height();
-//     if (widgetRatio > ratio)
-//     {
-//         label->setPixmap(pix.scaled((label->height()) * ratio, (label->height())));
-//     }
-//     else
-//     {
-//         label->setPixmap(pix.scaled((label->width()), (label->width()) / ratio));
-//     }
-// }

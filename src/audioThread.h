@@ -36,11 +36,17 @@ public slots:
     void setCurFrame(int _curFrame);
     // 开始播放
     void runPlay();
+
 public:
-    enum FFMPEG_INIT_ERROR{
+    enum FFMPEG_INIT_ERROR
+    {
         NO_ERROR = 0,
         OPEN_STREAM_ERROR,
-
+        FIND_INFO_ERROR,
+        FIND_STREAM_ERROR,
+        INIT_CODEC_CONTEXT_ERROR,
+        INIT_RESAMPLER_CONTEXT_ERROR,
+        INIT_SW_RENDERER_CONTEXT,
     };
 
 private:

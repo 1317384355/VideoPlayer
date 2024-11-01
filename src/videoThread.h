@@ -7,7 +7,7 @@ class VideoThread : public QObject
     Q_OBJECT
 signals:
     // 发送帧数据(当前帧进度, 当前帧)
-    void sendFrame(int curPts, cv::Mat &frame);
+    void sendFrame(int curPts, const QPixmap &frame);
     // 开始播放信号, 必须由此信号发出的播放才可在子线程中播放
     void startPlay();
     void finishPlay();
@@ -19,7 +19,7 @@ private slots:
 public slots:
     // 响应拖动进度条, 跳转到帧并返回这一帧画面
     void setCurFrame(int _curPts);
-    
+
     void startSave() { isSave = true; }
     void endSava() { isSave = false; }
 
@@ -46,5 +46,4 @@ public:
     double getVideoFrameCount();
 
     double getVideoDuration();
-
 };

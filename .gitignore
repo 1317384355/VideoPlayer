@@ -2,3 +2,4 @@ qrc/
 .vscode/
 build/
 *.txt
+demo.pro.user.*

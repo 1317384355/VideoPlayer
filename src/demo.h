@@ -1,40 +1,76 @@
 #pragma once
 
-#include <QDialog>
+#include "audioThread.h"
+#include "videoThread.h"
 #include <QLabel>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QPixmap>
 #include <QSlider>
-#include <QMouseEvent>
-#include "videoThread.h"
-#include "audioThread.h"
-#include <QMenu>
+#include <QWidget>
+#include <QApplication>
 
-class CLabel : public QLabel
+class demo : public QWidget
+{
+    Q_OBJECT
+private:
+public:
+    demo(QWidget *parent = nullptr);
+    ~demo();
+};
+
+// 画面窗口
+class FrameWidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit CLabel(QWidget *parent = nullptr) : QLabel(parent) {}
+    explicit FrameWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    ~FrameWidget() {}
 
+    void setPixmap(const QPixmap &pix)
+    {
+        // 这里不复制, 屏幕会不刷新
+        this->pix = pix.scaled(this->rect().size(), Qt::AspectRatioMode::KeepAspectRatio, Qt::TransformationMode::SmoothTransformation);
+        update();
+    }
+
+private:
     QMenu *menu;
+    QPixmap pix;
 
 signals:
     void clicked();
 
 protected:
-    void mouseReleaseEvent(QMouseEvent *event) override
+    virtual void paintEvent(QPaintEvent *event) override
+    {
+        if (!pix.isNull())
+        {
+            // 绘制图像
+            QPainter painter(this);
+            auto rect = event->rect();
+            QPixmap pixmap = rect == this->pix.rect() ? this->pix : this->pix.scaled(rect.size(), Qt::AspectRatioMode::KeepAspectRatio, Qt::TransformationMode::SmoothTransformation);
+            // 画面居中
+            painter.drawPixmap(rect.x() + (rect.width() - pixmap.width()) / 2, rect.y() + (rect.height() - pixmap.height()) / 2, pixmap);
+        }
+        QWidget::paintEvent(event);
+    }
+
+    virtual void mouseReleaseEvent(QMouseEvent *event) override
     {
         // 如果鼠标的点在label内部
-        if (event->pos().x() >= 0 && event->pos().x() <= this->width() &&
-            event->pos().y() >= 0 && event->pos().y() <= this->height())
+        if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
         {
             if (event->button() == Qt::LeftButton)
-                emit CLabel::clicked();
+                emit this->clicked();
             else if (event->button() == Qt::RightButton)
                 menu->exec(event->globalPos());
         }
     }
 };
 
+// 视频进度条
 class VideoSlider : public QSlider
 {
     Q_OBJECT
@@ -102,14 +138,14 @@ public:
     bool getIsPress() { return this->isPress; }
 };
 
-class CMediaDialog : public QDialog
+class CMediaDialog : public QWidget
 {
     Q_OBJECT
 signals:
     void startPlay();
 
 private slots:
-    void receviceFrame(int curFrame, cv::Mat &frame);
+    void receviceFrame(int curFrame, const QPixmap &frame);
 
     // 响应拖动进度条, 当鼠标压下时暂停, 并保存播放状态
     void startSeek();
@@ -121,21 +157,16 @@ private slots:
     void terminatePlay();
 
 private:
-    CLabel *label;
-    QPixmap pix;
-    double ratio;
-    VideoSlider *slider;
-    VideoThread *video_th;
-    AudioThread *audio_th;
-    QTime *m_time;
+    FrameWidget *frameWidget{nullptr};
+    VideoSlider *slider{nullptr};
+
+    VideoThread *video_th{nullptr};
+    AudioThread *audio_th{nullptr};
+    QTime *m_time{nullptr};
 
     int m_type;
 
     bool isPlay = false; // 保存拖动进度条前视频播放状态
-
-protected:
-    // void resizeEvent(QResizeEvent *event);
-    // void paintEvent(QPaintEvent *event);
 
 public:
     CMediaDialog(QWidget *parent = nullptr);
@@ -143,6 +174,4 @@ public:
 
     void showVideo(const QString &path);
     void changePlayState();
-
-    int showPic(const QString &path);
 };

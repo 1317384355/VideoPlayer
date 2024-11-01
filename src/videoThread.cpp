@@ -1,5 +1,7 @@
 #include "videoThread.h"
 #include <opencv2/core/cuda.hpp>
+#include <QImage>
+#include <QPixmap>
 
 using namespace cv;
 using namespace std;
@@ -40,7 +42,7 @@ double VideoThread::getVideoFrameCount()
 
 double VideoThread::getVideoDuration()
 {
-    double ret = m_cap.get(CAP_PROP_FRAME_COUNT) / m_cap.get(CAP_PROP_FPS) * 1000;
+    double ret = m_cap.get(CAP_PROP_FRAME_COUNT) / m_cap.get(CAP_PROP_FPS) * 1000; // 总时长, 单位ms
     qDebug() << m_cap.get(CAP_PROP_FRAME_COUNT) << m_cap.get(CAP_PROP_FPS) << ret;
     return ret;
 }
@@ -51,20 +53,22 @@ void VideoThread::runPlay()
     {
         if (m_cap.read(m_frame))
         {
-            if(isSave)
+            if (isSave)
             {
                 QString path = QString("./save/%1.png").arg(curPts);
-                if(imwrite(path.toStdString(),m_frame) == false)
-                    qDebug()<<path;
+                if (imwrite(path.toStdString(), m_frame) == false)
+                    qDebug() << path;
             }
             curPts = m_cap.get(CAP_PROP_POS_MSEC);
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
+            QPixmap frame = QPixmap::fromImage(QImage(m_frame.data, m_frame.cols, m_frame.rows, m_frame.step, QImage::Format_RGB888));
             int sleepTime = curPts - m_audio->getAudioClock();
+            // qDebug() << "video:" << curPts << "audio:" << m_audio->getAudioClock() << "sleepTime:" << sleepTime;
             if (sleepTime > 0)
             {
                 QThread::msleep(sleepTime);
             }
-            emit sendFrame(curPts, m_frame);
+            emit sendFrame(curPts, frame);
         }
         else
         {
@@ -87,7 +91,8 @@ void VideoThread::setCurFrame(int _curPts)
         if (m_cap.read(m_frame))
         {
             cvtColor(m_frame, m_frame, COLOR_BGR2RGB);
-            emit VideoThread::sendFrame(_curPts, m_frame);
+            QPixmap frame = QPixmap::fromImage(QImage(m_frame.data, m_frame.cols, m_frame.rows, m_frame.step, QImage::Format_RGB888));
+            emit VideoThread::sendFrame(_curPts, frame);
         }
     }
 }
