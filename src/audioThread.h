@@ -2,91 +2,45 @@
 
 #include <QIODevice>
 #include <QAudioOutput>
-#include "playerCommand.h"
-
-extern "C"
-{
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libswresample/swresample.h>
-}
 
 #include <QDebug>
 #include <QThread>
 
-enum CONTL_TYPE
-{
-    NONE,
-    PLAY,
-    PAUSE,
-    RESUME,
-    END,
-};
+#include "playerCommand.h"
 
 class AudioThread : public QObject
 {
     Q_OBJECT
 signals:
-    void startPlay();
-
-private slots:
+    void audioDataUsed();
+    void audioOutputReady();
 
 public slots:
-    // 响应拖动进度条, 跳转到帧并返回这一帧画面
-    void setCurFrame(int _curFrame);
-    // 开始播放
-    void runPlay();
+    void recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts);
 
-public:
-    enum FFMPEG_INIT_ERROR
-    {
-        NO_ERROR = 0,
-        OPEN_STREAM_ERROR,
-        FIND_INFO_ERROR,
-        FIND_STREAM_ERROR,
-        INIT_CODEC_CONTEXT_ERROR,
-        INIT_RESAMPLER_CONTEXT_ERROR,
-        INIT_SW_RENDERER_CONTEXT,
-    };
+    // 音频输出设备初始化
+    void onInitAudioOutput(int sampleRate, int channels);
+
+    // 获取音频时钟(必须用Qt::DirectConnection连接)
+    void onGetAudioClock(double *pts);
 
 private:
-    AVFormatContext *formatContext; // 用于处理媒体文件格式的结构, 包含了许多用于描述文件格式和元数据的信息
-    AVCodecContext *codecContext;
-    AVFrame *frame; // 帧
-    SwrContext *swrContext;
+    QAudioOutput *audioOutput = nullptr;
+    QIODevice *outputDevice = nullptr; // 音频输出流
 
-    uint8_t *convertedAudioBuffer;
-    AVPacket packet;
-    int audioStreamIndex;
+    uint8_t *convertedAudioBuffer = nullptr;
 
-    double curPts;
-    double time_base_q2d;
+    int sample_rate = -1;
+    int nb_channels = -1;
 
-    QThread *m_thread; // 播放线程
-    const int *m_type; // 控制播放状态
+    double cur_pts = 0; // 上一个包的时间戳(单位ms)
 
-    QAudioOutput *audioOutput;
-    QIODevice *outputDevice; // 音频输出流
+    // 输出音频帧
+    void outputAudioFrame(uint8_t *audioBuffer, int bufferSize);
 
-    // 音频相关结构体初始化
-    int init_FFmpeg(const QString &filePath);
-    // 音频输出设备初始化
-    void init_AudioOutput();
     void clean();
 
 public:
-    explicit AudioThread(const int *_type);
+    explicit AudioThread(QObject *parent = nullptr);
     ~AudioThread();
-
-    void setAudioPath(const QString &filePath);
-
-    bool resume();
-
-    // 得到总音频帧数
-    int64_t getAudioFrameCount() const;
-
-    int64_t getAudioDuration() const;
-
-    // 得到当前当前音频的时钟进度, 不可作为槽函数
-    double getAudioClock() const;
 };

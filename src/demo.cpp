@@ -10,8 +10,6 @@
 #include <QPushButton>
 #include <QFileDialog>
 
-using namespace cv;
-
 demo::demo(QWidget *parent) : QWidget(parent)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -68,27 +66,36 @@ CMediaDialog::~CMediaDialog()
     this->disconnect();
 }
 
-void CMediaDialog::receviceFrame(int curMs, const QPixmap &frame)
-{
-    if (slider->getIsPress() == false)
-    {
-        slider->setValue(curMs);
-    }
-    frameWidget->setPixmap(frame);
-}
-
 void CMediaDialog::showVideo(const QString &path)
 {
     this->show();
     slider->setValue(0);
 
-    audio_th = new AudioThread(&m_type);
-    audio_th->setAudioPath(path);
+    decode_th = new Decode(&m_type);
+    decodeThread = new QThread();
+    decode_th->moveToThread(decodeThread);
+    decodeThread->start();
+    connect(this, &CMediaDialog::startPlay, decode_th, &Decode::decodePacket);
 
-    video_th = new VideoThread(&m_type, audio_th);
-    video_th->setVideoPath(path);
-    video_th->getVideoDuration();
-    slider->setRange(0, audio_th->getAudioDuration());
+    audio_th = new AudioThread();
+    audioThread = new QThread();
+    audio_th->moveToThread(audioThread);
+    audioThread->start();
+    connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput);
+    connect(decode_th, &Decode::sendAudioData, audio_th, &AudioThread::recvAudioData);
+    connect(audio_th, &AudioThread::audioOutputReady, this, &CMediaDialog::startPlay);
+    connect(audio_th, &AudioThread::audioDataUsed, decode_th, &Decode::onAudioDataUsed, Qt::DirectConnection); // 必须直连
+
+    video_th = new VideoThread();
+    videoThread = new QThread();
+    video_th->moveToThread(videoThread);
+    videoThread->start();
+    connect(decode_th, &Decode::sendVideoData, video_th, &VideoThread::recvVideoData);
+    connect(video_th, &VideoThread::videoDataUsed, decode_th, &Decode::onVideoDataUsed, Qt::DirectConnection);     // 必须直连
+    connect(video_th, &VideoThread::getAudioClock, audio_th, &AudioThread::onGetAudioClock, Qt::DirectConnection); // 必须直连
+
+    decode_th->setVideoPath(path);
+    slider->setRange(0, decode_th->getDuration());
 
     // this->label->menu = new QMenu(this);
     // auto actSS = new QAction("开始保存", this->label->menu);
@@ -102,21 +109,20 @@ void CMediaDialog::showVideo(const QString &path)
     //     video_th->endSava();
     // });
 
-    connect(video_th, &VideoThread::sendFrame, this, &CMediaDialog::receviceFrame, Qt::DirectConnection); //  Qt::DirectConnection 必须
+    connect(video_th, &VideoThread::sendFrame, frameWidget, &FrameWidget::receviceFrame); //  Qt::DirectConnection 必须
 
     connect(frameWidget, &FrameWidget::clicked, this, &CMediaDialog::changePlayState);
 
     connect(slider, &VideoSlider::sliderClicked, this, &CMediaDialog::startSeek);
-    connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
-    connect(slider, &VideoSlider::sliderMoved, audio_th, &AudioThread::setCurFrame);
+    // connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
+    // connect(slider, &VideoSlider::sliderMoved, audio_th, &AudioThread::setCurFrame);
     connect(slider, &VideoSlider::sliderReleased, this, &CMediaDialog::endSeek);
 
-    connect(this, &CMediaDialog::startPlay, video_th, &VideoThread::startPlay);
-    connect(this, &CMediaDialog::startPlay, audio_th, &AudioThread::startPlay);
-    connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
+    // connect(this, &CMediaDialog::startPlay, video_th, &VideoThread::startPlay);
+    // connect(this, &CMediaDialog::startPlay, audio_th, &AudioThread::startPlay);
+    // connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
 
     m_type = CONTL_TYPE::PLAY;
-    emit this->startPlay();
 }
 
 void CMediaDialog::changePlayState()
@@ -136,8 +142,8 @@ void CMediaDialog::changePlayState()
         break;
 
     case CONTL_TYPE::RESUME:
-        video_th->resume();
-        audio_th->resume();
+        // video_th->resume();
+        // audio_th->resume();
         m_type = CONTL_TYPE::PLAY;
         break;
 

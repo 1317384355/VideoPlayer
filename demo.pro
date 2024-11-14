@@ -17,12 +17,14 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 HEADERS += \
     src/audioThread.h \
+    src/decode.h \
     src/demo.h \
     src/playerCommand.h \
     src/videoThread.h
 
 SOURCES += \
     src/audioThread.cpp \
+    src/decode.cpp \
     src/demo.cpp \
     src/main.cpp \
     src/videoThread.cpp
