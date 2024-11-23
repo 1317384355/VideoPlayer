@@ -3,17 +3,7 @@
 #include <QPixmap>
 #define MAX_AUDIO_FRAME_SIZE 192000
 
-Decode::Decode(const int *_type, QObject *parent) : m_type(_type), QObject(parent),
-                                                    formatContext(nullptr),
-                                                    videoCodecContext(nullptr),
-                                                    audioCodecContext(nullptr),
-                                                    swrContext(nullptr),
-                                                    convertedAudioBuffer(nullptr),
-                                                    audioStreamIndex(-1),
-                                                    videoStreamIndex(-1),
-                                                    mediaType(UNKNOWN),
-                                                    time_base_q2d(0),
-                                                    curPts(0)
+Decode::Decode(const int *_type, QObject *parent) : m_type(_type), QObject(parent), formatContext(nullptr), videoCodecContext(nullptr), audioCodecContext(nullptr), swrContext(nullptr), convertedAudioBuffer(nullptr), audioStreamIndex(-1), videoStreamIndex(-1), mediaType(UNKNOWN), time_base_q2d(0), curPts(0)
 {
     avformat_network_init(); // Initialize FFmpeg network components
 
@@ -53,6 +43,7 @@ void Decode::setVideoPath(const QString &filePath)
         isInitSuccess = true;
         qDebug() << "init FFmpeg success";
         emit initAudioOutput(audioCodecContext->sample_rate, audioCodecContext->ch_layout.nb_channels);
+        emit initVideoOutput(hw_device_pixel);
     }
     else
     {
@@ -82,13 +73,13 @@ int64_t Decode::getVideoFrameCount() const
 
 int64_t Decode::getDuration() const
 {
-    while (isIniting)
-    {
-        if (!isInitSuccess)
-            return -1;
+    // while (isIniting)
+    // {
+    //     if (!isInitSuccess)
+    //         return -1;
 
-        QThread::msleep(50);
-    }
+    //     QThread::msleep(50);
+    // }
 
     // 流的总时长 ms
     int64_t ret = (formatContext->duration / (int64_t)(AV_TIME_BASE / 1000));
@@ -121,8 +112,7 @@ int Decode::initFFmpeg(const QString &filePath)
     {
         formatContext = avformat_alloc_context();
 
-        if (avformat_open_input(&formatContext, filePath.toUtf8().constData(),
-                                nullptr, nullptr) != 0)
+        if (avformat_open_input(&formatContext, filePath.toUtf8().constData(), nullptr, nullptr) != 0)
         {
             throw OPEN_STREAM_ERROR;
         }
@@ -162,10 +152,7 @@ int Decode::initFFmpeg(const QString &filePath)
             // 成功返回 0, 错误时返回一个负的 AVERROR code
             // 错误时, SwrContext 将被释放 并且 *ps(即传入的swrContext) 被置为空
             AVChannelLayout ac_ch_ly = AV_CHANNEL_LAYOUT_STEREO;
-            if (0 != swr_alloc_set_opts2(&swrContext,
-                                         &ac_ch_ly, AV_SAMPLE_FMT_S16, audioCodecContext->sample_rate,
-                                         &audioCodecContext->ch_layout, audioCodecContext->sample_fmt, audioCodecContext->sample_rate,
-                                         0, nullptr))
+            if (0 != swr_alloc_set_opts2(&swrContext, &ac_ch_ly, AV_SAMPLE_FMT_S16, audioCodecContext->sample_rate, &audioCodecContext->ch_layout, audioCodecContext->sample_fmt, audioCodecContext->sample_rate, 0, nullptr))
             {
                 throw INIT_RESAMPLER_CONTEXT_ERROR;
             }
@@ -190,8 +177,7 @@ int Decode::initFFmpeg(const QString &filePath)
 
                     // 可能一个解码器对应着多个硬件加速方式，所以这里将其挑选出来
                     if (
-                        config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-                        config->device_type == type)
+                        config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == type)
                     {
                         hw_device_pixel = config->pix_fmt;
                         qDebug() << "hw_device_pixel: " << Decode::hw_device_pixel;
@@ -231,8 +217,9 @@ int Decode::initCodec(AVCodecContext **codecContext, int streamIndex, const AVCo
 
     avcodec_parameters_to_context(*codecContext, stream->codecpar);
 
+    // 如果是视频流，并且支持硬件加速，则尝试设置硬件加速
     if (formatContext->streams[streamIndex]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && type != AV_HWDEVICE_TYPE_NONE)
-    { // 如果是视频流，并且支持硬件加速，则设置硬件加速
+    {
         // if(config == nullptr)
 
         AVBufferRef *hw_device_ctx = nullptr;
@@ -260,6 +247,7 @@ void Decode::clean()
     mediaType = UNKNOWN;
     time_base_q2d = 0;
     curPts = 0;
+    hw_device_pixel = AV_PIX_FMT_NONE;
 
     // 倒着清理
     if (convertedAudioBuffer)
@@ -334,7 +322,8 @@ void Decode::decodePacket()
                         int bufferSize = av_samples_get_buffer_size(nullptr,
                                                                     frame->ch_layout.nb_channels,
                                                                     convertedSize,
-                                                                    AV_SAMPLE_FMT_S16, 1);
+                                                                    AV_SAMPLE_FMT_S16,
+                                                                    1);
                         double framePts = time_base_q2d * 1000 * frame->pts;
                         // 将转换后的音频数据发送到音频播放器
                         emit sendAudioData(convertedAudioBuffer, bufferSize, framePts);
@@ -351,14 +340,15 @@ void Decode::decodePacket()
             {
                 if (avcodec_receive_frame(videoCodecContext, frame) == 0)
                 {
-                    if (frame->format == hw_device_pixel)
+                    uint8_t *pixelData = nullptr;
+                    if (frame->format == AV_PIX_FMT_CUDA)
                     {
-                        // 如果采用的硬件加速，则调用avcodec_receive_frame()函数后，
-                        // 解码后的数据还在GPU中，所以需要通过此函数将GPU中的数据转移到CPU中来
-                        // GPU解码数据格式是NV12，需要转换成YUV420P格式
-                        // 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
+                        // // 如果采用的硬件加速，则调用avcodec_receive_frame()函数后，
+                        // // 解码后的数据还在GPU中，所以需要通过此函数将GPU中的数据转移到CPU中来
+                        // // GPU解码数据格式是NV12，需要转换成YUV420P格式
+                        // // 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
                         AVFrame *tmp_frame = av_frame_alloc();
-                        tmp_frame->format = AV_PIX_FMT_YUV420P;
+                        // tmp_frame->format = AV_PIX_FMT_YUV420P; // 目前转换有问题, 会导致绿屏
                         int ret = av_hwframe_transfer_data(tmp_frame, frame, 0);
                         av_frame_free(&frame);
                         frame = tmp_frame;
@@ -367,11 +357,16 @@ void Decode::decodePacket()
                             qDebug() << "av_hwframe_transfer_data fail";
                             continue;
                         }
+                        pixelData = copyNv12Data(tmp_frame->data, tmp_frame->linesize, tmp_frame->width, tmp_frame->height);
+                    }
+                    else
+                    {
+                        pixelData = copyYuv420lData(frame->data, frame->linesize, frame->width, frame->height);
                     }
                     double framePts = time_base_q2d * 1000 * frame->pts;
 
-                    // uint8_t **pixelData = copyPixelData(frame->data, frame->linesize, frame->width, frame->height);
-                    emit sendVideoData(frame->data, frame->linesize, frame->width, frame->height, framePts);
+                    // uint8_t **pixelData = copyYuv420lData(frame->data, frame->linesize, frame->width, frame->height);
+                    emit sendVideoData(pixelData, frame->width, frame->height, framePts);
                     isVideoPacketEmpty = false;
 
                     while (!isVideoPacketEmpty)
@@ -388,26 +383,45 @@ void Decode::decodePacket()
         av_frame_free(&frame);
 }
 
-uint8_t **Decode::copyPixelData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)
+uint8_t *Decode::copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)
 {
-    uint8_t **pixel = new uint8_t *[3];
-    int halfWidth = pixelWidth / 2;
-    int halfHeight = pixelHeight / 2;
-    pixel[0] = new uint8_t[pixelWidth * pixelHeight];
-    pixel[1] = new uint8_t[halfWidth * halfHeight];
-    pixel[2] = new uint8_t[halfWidth * halfHeight];
+    uint8_t *pixel = new uint8_t[pixelWidth * pixelHeight * 3 / 2];
+    uint8_t *y = pixel;
+    uint8_t *uv = pixel + pixelWidth * pixelHeight;
+    int halfWidth = pixelWidth >> 1;
+    int halfHeight = pixelHeight >> 1;
     for (int i = 0; i < pixelHeight; i++)
     {
-        memcpy(pixel[0] + i * pixelWidth, pixelData[0] + i * linesize[0], static_cast<size_t>(pixelWidth));
+        memcpy(y + i * pixelWidth, pixelData[0] + i * linesize[0], static_cast<size_t>(pixelWidth));
     }
+    for (int i = 0; i < halfHeight; i++)
+    {
+        memcpy(uv + i * halfWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(halfWidth));
+    }
+    qDebug() << "ptr-copyNv12Data:" << pixel;
+    return pixel;
+}
 
-    for (int i = 0; i < halfHeight; i++)
+uint8_t *Decode::copyYuv420lData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)
+{
+    uint8_t *pixel = new uint8_t[pixelHeight * pixelWidth * 3 / 2];
+    int halfWidth = pixelWidth >> 1;
+    int halfHeight = pixelHeight >> 1;
+    uint8_t *y = pixel;
+    uint8_t *u = pixel + pixelWidth * pixelHeight;
+    uint8_t *v = pixel + pixelWidth * pixelHeight + halfWidth * halfHeight;
+    // qDebug() << "ptr-copyYuv420lData:" << pixel << y << u << v;
+    for (int i = 0; i < pixelHeight; i++)
     {
-        memcpy(pixel[1] + i * halfWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(halfWidth));
+        memcpy(y + i * pixelWidth, pixelData[0] + i * linesize[0], static_cast<size_t>(pixelWidth));
     }
     for (int i = 0; i < halfHeight; i++)
     {
-        memcpy(pixel[2] + i * halfWidth, pixelData[2] + i * linesize[2], static_cast<size_t>(halfWidth));
+        memcpy(u + i * halfWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(halfWidth));
+    }
+    for (int i = 0; i < halfHeight; i++)
+    {
+        memcpy(v + i * halfWidth, pixelData[2] + i * linesize[2], static_cast<size_t>(halfWidth));
     }
     return pixel;
 }

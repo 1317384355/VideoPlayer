@@ -1,7 +1,7 @@
 #include "videoThread.h"
+#include <QDateTime>
 #include <QImage>
 #include <QPixmap>
-#include <QDateTime>
 #include <QThread>
 
 using namespace std;
@@ -15,10 +15,11 @@ VideoThread::~VideoThread()
 {
 }
 
-void VideoThread::recvVideoData(uint8_t **data, int *linesize, int pixelWidth, int pixelHeight, double pts)
+void VideoThread::recvVideoData(uint8_t *data, int pixelWidth, int pixelHeight, double pts)
 {
-    uint8_t **pixel = copyData(data, linesize, pixelWidth, pixelHeight);
-
+    // uint8_t **pixel = copyData(data, linesize, pixelWidth, pixelHeight);
+    uint8_t *pixel = data;
+    // qDebug() << "ptr-recvVideoData" << pixel;
     emit videoDataUsed();
     emit getAudioClock(&audioClock);
     int sleepTime = pts - audioClock;

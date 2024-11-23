@@ -1,8 +1,8 @@
 #pragma once
 
-#include <QIODevice>
-#include <QAudioOutput>
 #include "playerCommand.h"
+#include <QAudioOutput>
+#include <QIODevice>
 
 extern "C"
 {
@@ -33,9 +33,10 @@ class Decode : public QObject
 signals:
     void startPlay();
     void initAudioOutput(int sampleRate, int channels);
+    void initVideoOutput(int format);
 
     void sendAudioData(uint8_t *audioBuffer, int bufferSize, double pts);
-    void sendVideoData(uint8_t **videoData, int *linesize, int frameWidth, int frameHeight, double pts);
+    void sendVideoData(uint8_t *videoData, int frameWidth, int frameHeight, double pts);
 
 public slots:
     // 响应拖动进度条, 跳转到帧并返回这一帧画面
@@ -103,7 +104,8 @@ private:
 
     void clean();
 
-    uint8_t **copyPixelData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
+    uint8_t *copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
+    uint8_t *copyYuv420lData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
 
     void debugError(FFMPEG_INIT_ERROR error);
 

@@ -16,18 +16,22 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 HEADERS += \
-    src/audioThread.h \
-    src/decode.h \
+    src/CMediaDialog.h \
+    src/AudioThread.h \
+    src/Decode.h \
+    src/OpenGLWidget.h \
     src/demo.h \
     src/playerCommand.h \
-    src/videoThread.h
+    src/VideoThread.h
 
 SOURCES += \
-    src/audioThread.cpp \
-    src/decode.cpp \
+    src/CMediaDialog.cpp \
+    src/AudioThread.cpp \
+    src/Decode.cpp \
+    src/OpenGLWidget.cpp \
     src/demo.cpp \
     src/main.cpp \
-    src/videoThread.cpp
+    src/VideoThread.cpp
 
 LIBS += D:/lib/OpenCV/x64/mingw/lib/libopencv_*.a
 INCLUDEPATH += D:/lib/OpenCV/include

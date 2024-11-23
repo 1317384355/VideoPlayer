@@ -1,9 +1,8 @@
 #pragma once
 
-#include <QIODevice>
 #include <QAudioOutput>
-
 #include <QDebug>
+#include <QIODevice>
 #include <QThread>
 
 #include "playerCommand.h"
