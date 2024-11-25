@@ -16,117 +16,72 @@ extern "C"
 #include <libavutil/pixfmt.h>
 }
 
-class COpenGLFunctions : public QOpenGLFunctions
+class BaseOpenGLWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
 private:
-    QOpenGLWidget *m_parent = nullptr;
+    QOpenGLShaderProgram *program{nullptr};
+    QOpenGLBuffer vbo;
+    const void *vertices{nullptr};
+    const char *fsrc{nullptr};
+
+    virtual void initializeGL() override;
+    virtual void paintGL() override { paint(); }
 
 protected:
-    QOpenGLWidget *parentPtr() { return m_parent; }
-
-public:
-    COpenGLFunctions() = default;
-    COpenGLFunctions(const COpenGLFunctions &) = delete;
-
-    void setParent(QOpenGLWidget *parent) { m_parent = parent; }
-
-    virtual void initialize() = 0;
-    virtual void render(uint8_t *pixelData, int pixelWidth, int pixelHeight) = 0;
-};
-
-class COpenGLWidget : public QOpenGLWidget
-{
-private:
+    uint8_t *dataPtr{nullptr};
     int videoW, videoH;
-    uint8_t *dataPtr = nullptr;
-    COpenGLFunctions *glFuncs = nullptr;
 
-protected:
-    virtual void initializeGL() override { glFuncs->initialize(); }
-    virtual void paintGL() override { glFuncs->render(dataPtr, videoW, videoH); }
+    // void setVerticesAndFsrc(const void *_vertices, const char *_fsrc);
+    // 设置顶点坐标和片段着色器源码
+    void loadPixelFormat(AVPixelFormat pixelFormat);
+    // 初始化纹理, 必须在子类中实现
+    virtual void initTexture() = 0;
+    virtual void paint() = 0;
+    // 加载分量纹理
+    void loadTexture(GLenum textureType, GLuint textureId, GLsizei width, GLsizei height, GLenum format, const GLvoid *pixels);
+
+    int programUniformLocation(const char *name) { return program->uniformLocation(name); }
 
 public:
-    COpenGLWidget(QWidget *parent = nullptr, int pixFmt = AV_PIX_FMT_YUV420P) : QOpenGLWidget(parent) { initGLFuncs(pixFmt); }
-    ~COpenGLWidget() override {}
+    BaseOpenGLWidget(AVPixelFormat pixelFormat, QWidget *parent = nullptr) : QOpenGLWidget(parent) { loadPixelFormat(pixelFormat); }
+    ~BaseOpenGLWidget() override {}
 
-    void initGLFuncs(int pixFmt);
     void setPixelData(uint8_t *pixelData, int pixelWidth, int pixelHeight);
 };
 
-class Yuv420Funcs : public COpenGLFunctions
+class Yuv420GLWidget : public BaseOpenGLWidget
 {
 private:
-    QOpenGLShaderProgram *program;
-    QOpenGLBuffer vbo;
     GLuint textureUniformY, textureUniformU, textureUniformV; // opengl中y、u、v分量位置
     QOpenGLTexture *textureY = nullptr, *textureU = nullptr, *textureV = nullptr;
     GLuint idY, idU, idV; // 自己创建的纹理对象ID，创建错误返回0
 
+protected:
+    virtual void initTexture() override;
+    virtual void paint() override;
+
 public:
-    virtual void initialize() override;
-    virtual void render(uint8_t *pixelData, int pixelWidth, int pixelHeight) override;
+    Yuv420GLWidget(QWidget *parent = nullptr) : BaseOpenGLWidget(AV_PIX_FMT_YUV420P, parent) { qDebug() << "Yuv420GLWidget"; }
 };
 
-class Nv12Funcs : public COpenGLFunctions
+class Nv12GLWidget : public BaseOpenGLWidget
 {
-public:
-    virtual void initialize() override;
-    virtual void render(uint8_t *pixelData, int pixelWidth, int pixelHeight) override;
-
 private:
-    QOpenGLShaderProgram program;
+    GLuint textureUniformY, textureUniformUV; // opengl中y、u、v分量位置
+    QOpenGLTexture *textureY = nullptr, *textureUV = nullptr;
     GLuint idY, idUV;
-    QOpenGLBuffer vbo;
-};
-
-class Yuv420GLWidget : public QOpenGLWidget, protected QOpenGLFunctions
-{
-private:
-    QOpenGLShaderProgram *program;
-    QOpenGLBuffer vbo;
-    GLuint textureUniformY, textureUniformU, textureUniformV; // opengl中y、u、v分量位置
-    QOpenGLTexture *textureY = nullptr, *textureU = nullptr, *textureV = nullptr;
-    GLuint idY, idU, idV; // 自己创建的纹理对象ID，创建错误返回0
-
-    int videoW, videoH;
-    uint8_t *dataPtr = nullptr;
 
 protected:
-    virtual void initializeGL() override;
-    virtual void paintGL() override;
+    virtual void initTexture() override;
+    virtual void paint() override;
 
 public:
-    Yuv420GLWidget(QWidget *parent = nullptr) : QOpenGLWidget(parent) {}
+    Nv12GLWidget(QWidget *parent = nullptr) : BaseOpenGLWidget(AV_PIX_FMT_NV12, parent) { qDebug() << "Nv12GLWidget"; }
 
     void setPixelData(uint8_t *pixelData, int pixelWidth, int pixelHeight)
     {
-        dataPtr = pixelData;
-        videoW = pixelWidth;
-        videoH = pixelHeight;
-        update();
-        // qDebug() << "update";
-    }
-};
-
-class Nv12GLWidget : public QOpenGLWidget, protected QOpenGLFunctions
-{
-private:
-    QOpenGLShaderProgram program;
-    GLuint idY, idUV;
-    QOpenGLBuffer vbo;
-
-    int videoW, videoH;
-    uint8_t *dataPtr = nullptr;
-
-protected:
-    virtual void initializeGL() override;
-    virtual void paintGL() override;
-
-public:
-    Nv12GLWidget(QWidget *parent = nullptr) : QOpenGLWidget(parent) {}
-
-    void setPixelData(uint8_t *pixelData, int pixelWidth, int pixelHeight)
-    {
+        if (dataPtr)
+            delete[] dataPtr; // 释放之前的内存
         dataPtr = pixelData;
         videoW = pixelWidth;
         videoH = pixelHeight;

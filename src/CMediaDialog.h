@@ -11,7 +11,6 @@
 #include <QSlider>
 #include <QWidget>
 
-#include <QVBoxLayout>
 // 画面窗口
 class FrameWidget : public QWidget
 {
@@ -21,7 +20,6 @@ public slots:
     void receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight);
 
 private:
-    COpenGLWidget *glWidget = nullptr;   // OpenGL窗口
     Yuv420GLWidget *yuvWidget = nullptr; // YUV窗口
     Nv12GLWidget *nv12Widget = nullptr;  // NV12窗口
 

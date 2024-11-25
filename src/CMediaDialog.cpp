@@ -11,11 +11,7 @@
 #include <QVBoxLayout>
 #include <QStackedLayout>
 
-#define USE_Yuv420GLWidget 0
-#define USE_Nv12GLWidget 1
-
-CMediaDialog::CMediaDialog(QWidget *parent)
-    : QWidget(parent)
+CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
 {
     QStackedLayout *stackedLayout = new QStackedLayout(this);
     stackedLayout->setContentsMargins(0, 0, 0, 0);
@@ -233,30 +229,35 @@ void FrameWidget::onInitVideoOutput(int format)
         this->setLayout(layout);
         layout->setContentsMargins(0, 0, 0, 0);
     }
-#if USE_Yuv420GLWidget
-    yuvWidget = new Yuv420GLWidget(this);
-    this->layout()->addWidget(yuvWidget);
-#elif USE_Nv12GLWidget
-    nv12Widget = new Nv12GLWidget(this);
-    this->layout()->addWidget(nv12Widget);
-#else
-    if (glWidget)
+
+    if (yuvWidget)
+        delete yuvWidget;
+    if (nv12Widget)
+        delete nv12Widget;
+
+    switch (format)
     {
-        this->layout()->removeWidget(glWidget);
-        delete glWidget;
+    case AV_PIX_FMT_NONE:
+        qDebug() << "YUV420GL_WIDGET";
+        yuvWidget = new Yuv420GLWidget(this);
+        this->layout()->addWidget(yuvWidget);
+        break;
+
+    case AV_PIX_FMT_CUDA:
+        qDebug() << "NV12GL_WIDGET";
+        nv12Widget = new Nv12GLWidget(this);
+        this->layout()->addWidget(nv12Widget);
+        break;
+    default:
+
+        break;
     }
-    glWidget = new COpenGLWidget(this, format);
-    this->layout()->addWidget(glWidget);
-#endif
 }
 
 void FrameWidget::receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight)
 {
-    // qDebug() << "receviceFrame";
     if (nv12Widget)
         nv12Widget->setPixelData(pixelData, pixelWidth, pixelHeight);
     if (yuvWidget)
         yuvWidget->setPixelData(pixelData, pixelWidth, pixelHeight);
-    if (glWidget)
-        glWidget->setPixelData(pixelData, pixelWidth, pixelHeight);
 }

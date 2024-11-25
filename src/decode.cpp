@@ -15,10 +15,11 @@ Decode::Decode(const int *_type, QObject *parent) : m_type(_type), QObject(paren
         devices.append(print_type);
         qDebug() << "suport devices: " << av_hwdevice_get_type_name(print_type);
     }
-    if (devices.size() > 0)
-        type = devices[0]; // 默认使用第一个设备
-    else
-        type = AV_HWDEVICE_TYPE_NONE; // 没有设备
+
+    // if (devices.size() > 0)
+    //     type = devices[0]; // 默认使用第一个设备
+    // else
+    type = AV_HWDEVICE_TYPE_NONE; // 没有设备
 }
 
 Decode::~Decode()
@@ -388,7 +389,7 @@ uint8_t *Decode::copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth
     uint8_t *pixel = new uint8_t[pixelWidth * pixelHeight * 3 / 2];
     uint8_t *y = pixel;
     uint8_t *uv = pixel + pixelWidth * pixelHeight;
-    int halfWidth = pixelWidth >> 1;
+
     int halfHeight = pixelHeight >> 1;
     for (int i = 0; i < pixelHeight; i++)
     {
@@ -396,9 +397,8 @@ uint8_t *Decode::copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth
     }
     for (int i = 0; i < halfHeight; i++)
     {
-        memcpy(uv + i * halfWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(halfWidth));
+        memcpy(uv + i * pixelWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(pixelWidth));
     }
-    qDebug() << "ptr-copyNv12Data:" << pixel;
     return pixel;
 }
 
@@ -410,7 +410,6 @@ uint8_t *Decode::copyYuv420lData(uint8_t **pixelData, int *linesize, int pixelWi
     uint8_t *y = pixel;
     uint8_t *u = pixel + pixelWidth * pixelHeight;
     uint8_t *v = pixel + pixelWidth * pixelHeight + halfWidth * halfHeight;
-    // qDebug() << "ptr-copyYuv420lData:" << pixel << y << u << v;
     for (int i = 0; i < pixelHeight; i++)
     {
         memcpy(y + i * pixelWidth, pixelData[0] + i * linesize[0], static_cast<size_t>(pixelWidth));

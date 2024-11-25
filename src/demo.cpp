@@ -27,6 +27,8 @@ demo::demo(QWidget *parent) : QWidget(parent)
 
     // 连接槽, 选择视频并播放
     connect(btnSelect, &QPushButton::clicked, [=]() { //
+        w->showVideo("E:/Anime/GIRLS BAND CRY/[Nekomoe kissaten][GIRLS BAND CRY][01][1080p][JPSC].mp4");
+        return;
         QString path = QFileDialog::getOpenFileName(this, "选择视频文件", "", "Video Files(*.mp4 *.avi *.mkv)");
         if (!path.isEmpty())
         {
