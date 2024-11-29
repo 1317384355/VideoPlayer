@@ -20,8 +20,7 @@ public slots:
     void receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight);
 
 private:
-    Yuv420GLWidget *yuvWidget = nullptr; // YUV窗口
-    Nv12GLWidget *nv12Widget = nullptr;  // NV12窗口
+    BaseOpenGLWidget *glWidget = nullptr; // OpenGL窗口
 
 public:
     explicit FrameWidget(QWidget *parent = nullptr) : QWidget(parent) {}

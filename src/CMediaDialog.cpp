@@ -230,23 +230,21 @@ void FrameWidget::onInitVideoOutput(int format)
         layout->setContentsMargins(0, 0, 0, 0);
     }
 
-    if (yuvWidget)
-        delete yuvWidget;
-    if (nv12Widget)
-        delete nv12Widget;
+    if (glWidget)
+        delete glWidget;
 
     switch (format)
     {
     case AV_PIX_FMT_NONE:
         qDebug() << "YUV420GL_WIDGET";
-        yuvWidget = new Yuv420GLWidget(this);
-        this->layout()->addWidget(yuvWidget);
+        glWidget = new Yuv420GLWidget(this);
+        this->layout()->addWidget(glWidget);
         break;
 
     case AV_PIX_FMT_CUDA:
         qDebug() << "NV12GL_WIDGET";
-        nv12Widget = new Nv12GLWidget(this);
-        this->layout()->addWidget(nv12Widget);
+        glWidget = new Nv12GLWidget(this);
+        this->layout()->addWidget(glWidget);
         break;
     default:
 
@@ -256,8 +254,6 @@ void FrameWidget::onInitVideoOutput(int format)
 
 void FrameWidget::receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight)
 {
-    if (nv12Widget)
-        nv12Widget->setPixelData(pixelData, pixelWidth, pixelHeight);
-    if (yuvWidget)
-        yuvWidget->setPixelData(pixelData, pixelWidth, pixelHeight);
+    if (glWidget)
+        glWidget->setPixelData(pixelData, pixelWidth, pixelHeight);
 }
