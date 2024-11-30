@@ -44,19 +44,27 @@ void AudioThread::onGetAudioClock(double *pts)
     int bytes_per_sec = sample_rate * nb_channels * 2;
 
     // 当前时间戳 - 输出流中缓存数据 可播放时长
-    *pts = (cur_pts - static_cast<double>(buf_size) / bytes_per_sec);
+    *pts = (curPtsMs - static_cast<double>(buf_size) / bytes_per_sec);
 }
 
 void AudioThread::recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts)
 {
     // qDebug() << "-----------output start------";
-    // qDebug() << "audio thread:" << QThread::currentThreadId();
     memcpy(convertedAudioBuffer, audioBuffer, bufferSize);
     emit audioDataUsed();
-    cur_pts = pts;
+    int curPtsSeconds = pts / 1000;
+    // 将curPtsSeconds转为时:分:秒的字符串
+    QString ptsTime = QTime::fromMSecsSinceStartOfDay(pts).toString("hh:mm:ss");
+    curPtsMs = pts;
 
     while (audioOutput->bytesFree() < bufferSize)
         QThread::msleep(10);
+
+    if (curPtsSeconds != lastPtsSeconds)
+    {
+        lastPtsSeconds = curPtsSeconds;
+        emit audioClockChanged(curPtsSeconds, ptsTime);
+    }
     outputAudioFrame(convertedAudioBuffer, bufferSize);
     // qDebug() << "-----------output over------";
 }
@@ -74,5 +82,12 @@ void AudioThread::clean()
         audioOutput->stop();
         outputDevice = nullptr;
         audioOutput->deleteLater();
+        audioOutput = nullptr;
+
+        sample_rate = -1;
+        nb_channels = -1;
+
+        lastPtsSeconds = 0;
+        curPtsMs = 0;
     }
 }

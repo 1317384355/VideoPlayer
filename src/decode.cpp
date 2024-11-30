@@ -16,10 +16,10 @@ Decode::Decode(const int *_type, QObject *parent) : m_type(_type), QObject(paren
         qDebug() << "suport devices: " << av_hwdevice_get_type_name(print_type);
     }
 
-    // if (devices.size() > 0)
-    //     type = devices[0]; // 默认使用第一个设备
-    // else
-    type = AV_HWDEVICE_TYPE_NONE; // 没有设备
+    if (devices.size() > 0)
+        type = devices[0]; // 默认使用第一个设备
+    else
+        type = AV_HWDEVICE_TYPE_NONE; // 没有设备
 }
 
 Decode::~Decode()
@@ -91,8 +91,6 @@ int64_t Decode::getDuration() const
 void Decode::onAudioDataUsed()
 {
     isAudioPacketEmpty = true;
-    // qDebug() << "audioDataUsed" << QThread::currentThreadId();
-    // qDebug() << "isAudioPacketEmpty:" << isAudioPacketEmpty;
 }
 
 void Decode::onVideoDataUsed()
@@ -285,101 +283,120 @@ void Decode::clean()
 
 void Decode::decodePacket()
 {
-    // qDebug() << "decodePacket thread: " << QThread::currentThreadId();
+    if (*m_type != CONTL_TYPE::PLAY)
+        return;
 
     AVFrame *frame = nullptr; // 帧
     frame = av_frame_alloc();
-    while (*m_type == CONTL_TYPE::PLAY)
+    try
     {
-        if (av_read_frame(formatContext, &packet) < 0)
-            break;
-
-        if (packet.stream_index == audioStreamIndex)
+        while (*m_type == CONTL_TYPE::PLAY)
         {
-            while (!isAudioPacketEmpty)
-                QThread::msleep(10);
-            // 将音频帧发送到音频解码器
-            if (avcodec_send_packet(audioCodecContext, &packet) == 0)
+            // qDebug() << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz") << "decodePacket";
+            if (av_read_frame(formatContext, &packet) < 0)
+                throw QString("av_read_frame error");
+
+            if (packet.stream_index == audioStreamIndex)
             {
-                if (avcodec_receive_frame(audioCodecContext, frame) == 0)
+                while (!isAudioPacketEmpty)
                 {
-                    int64_t out_nb_samples = av_rescale_rnd(
-                        swr_get_delay(swrContext, frame->sample_rate) + frame->nb_samples,
-                        44100,
-                        frame->sample_rate,
-                        AV_ROUND_UP);
-
-                    // 将音频帧转换为 PCM 格式
-                    // convertedSize：转换后音频数据的大小
-                    int convertedSize = swr_convert(
-                        swrContext,                    // 转换工具?
-                        &convertedAudioBuffer,         // 输出
-                        out_nb_samples,                // 输出大小
-                        (const uint8_t **)frame->data, // 输入
-                        frame->nb_samples);            // 输入大小
-
-                    if (convertedSize > 0)
-                    {
-                        int bufferSize = av_samples_get_buffer_size(nullptr,
-                                                                    frame->ch_layout.nb_channels,
-                                                                    convertedSize,
-                                                                    AV_SAMPLE_FMT_S16,
-                                                                    1);
-                        double framePts = time_base_q2d * 1000 * frame->pts;
-                        // 将转换后的音频数据发送到音频播放器
-                        emit sendAudioData(convertedAudioBuffer, bufferSize, framePts);
-                        isAudioPacketEmpty = false;
-                    }
+                    if (*m_type != CONTL_TYPE::PLAY)
+                        throw QString("m_type != PLAY, in audio packet");
+                    QThread::msleep(10);
                 }
-                curPts = packet.pts;
-            }
-        }
-        else if (packet.stream_index == videoStreamIndex)
-        {
-            // 将视频帧发送到视频解码器
-            if (avcodec_send_packet(videoCodecContext, &packet) == 0)
-            {
-                if (avcodec_receive_frame(videoCodecContext, frame) == 0)
+
+                // 将音频帧发送到音频解码器
+                if (avcodec_send_packet(audioCodecContext, &packet) == 0)
                 {
-                    uint8_t *pixelData = nullptr;
-                    if (frame->format == AV_PIX_FMT_CUDA)
+                    if (avcodec_receive_frame(audioCodecContext, frame) == 0)
                     {
-                        // // 如果采用的硬件加速，则调用avcodec_receive_frame()函数后，
-                        // // 解码后的数据还在GPU中，所以需要通过此函数将GPU中的数据转移到CPU中来
-                        // // GPU解码数据格式是NV12，需要转换成YUV420P格式
-                        // // 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
-                        AVFrame *tmp_frame = av_frame_alloc();
-                        // tmp_frame->format = AV_PIX_FMT_YUV420P; // 目前转换有问题, 会导致绿屏
-                        int ret = av_hwframe_transfer_data(tmp_frame, frame, 0);
-                        av_frame_free(&frame);
-                        frame = tmp_frame;
-                        if (ret < 0)
+                        int64_t out_nb_samples = av_rescale_rnd(
+                            swr_get_delay(swrContext, frame->sample_rate) + frame->nb_samples,
+                            44100,
+                            frame->sample_rate,
+                            AV_ROUND_UP);
+
+                        // 将音频帧转换为 PCM 格式
+                        // convertedSize：转换后音频数据的大小
+                        int convertedSize = swr_convert(
+                            swrContext,                    // 转换工具?
+                            &convertedAudioBuffer,         // 输出
+                            out_nb_samples,                // 输出大小
+                            (const uint8_t **)frame->data, // 输入
+                            frame->nb_samples);            // 输入大小
+
+                        if (convertedSize > 0)
                         {
-                            qDebug() << "av_hwframe_transfer_data fail";
-                            continue;
+                            int bufferSize = av_samples_get_buffer_size(nullptr,
+                                                                        frame->ch_layout.nb_channels,
+                                                                        convertedSize,
+                                                                        AV_SAMPLE_FMT_S16,
+                                                                        1);
+                            double framePts = time_base_q2d * 1000 * frame->pts;
+                            // 将转换后的音频数据发送到音频播放器
+                            isAudioPacketEmpty = false;
+                            emit sendAudioData(convertedAudioBuffer, bufferSize, framePts);
                         }
-                        pixelData = copyNv12Data(tmp_frame->data, tmp_frame->linesize, tmp_frame->width, tmp_frame->height);
                     }
-                    else
-                    {
-                        pixelData = copyYuv420lData(frame->data, frame->linesize, frame->width, frame->height);
-                    }
-                    double framePts = time_base_q2d * 1000 * frame->pts;
-
-                    // uint8_t **pixelData = copyYuv420lData(frame->data, frame->linesize, frame->width, frame->height);
-                    emit sendVideoData(pixelData, frame->width, frame->height, framePts);
-                    isVideoPacketEmpty = false;
-
-                    while (!isVideoPacketEmpty)
-                        QThread::msleep(10);
+                    curPts = packet.pts;
                 }
-                curPts = packet.pts;
             }
-        }
+            else if (packet.stream_index == videoStreamIndex)
+            {
+                // 将视频帧发送到视频解码器
+                if (avcodec_send_packet(videoCodecContext, &packet) == 0)
+                {
+                    if (avcodec_receive_frame(videoCodecContext, frame) == 0)
+                    {
+                        while (!isVideoPacketEmpty)
+                        {
+                            if (*m_type != CONTL_TYPE::PLAY)
+                                throw QString("m_type != PLAY, in video packet");
+                            QThread::msleep(10);
+                        }
 
-        // 擦除缓存数据包
-        av_packet_unref(&packet);
+                        uint8_t *pixelData = nullptr;
+
+                        if (frame->format == AV_PIX_FMT_CUDA)
+                        {
+                            // 如果采用的硬件加速, 解码后的数据还在GPU中, 所以需要通过av_hwframe_transfer_data将GPU中的数据转移到内存中
+                            // GPU解码数据格式固定为NV12, 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
+                            AVFrame *tmp_frame = av_frame_alloc();
+                            if (0 > av_hwframe_transfer_data(tmp_frame, frame, 0))
+                            {
+                                qDebug() << "av_hwframe_transfer_data fail";
+                                av_frame_free(&tmp_frame);
+                                continue;
+                            }
+                            av_frame_free(&frame);
+                            frame = tmp_frame;
+
+                            pixelData = copyNv12Data(frame->data, frame->linesize, frame->width, frame->height);
+                        }
+                        else
+                        {
+                            pixelData = copyYuv420lData(frame->data, frame->linesize, frame->width, frame->height);
+                        }
+                        double framePts = time_base_q2d * 1000 * frame->pts;
+
+                        isVideoPacketEmpty = false;
+                        emit sendVideoData(pixelData, frame->width, frame->height, framePts);
+                    }
+                    curPts = packet.pts;
+                }
+            }
+
+            // 擦除缓存数据包
+            av_packet_unref(&packet);
+        }
     }
+    catch (const QString &str)
+    {
+        qDebug() << "throw:" << str;
+        debugPlayerCommand(CONTL_TYPE(*m_type));
+    }
+
+    qDebug() << "Decode::decodePacket() end";
     if (frame)
         av_frame_free(&frame);
 }

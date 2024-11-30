@@ -38,3 +38,27 @@ enum CONTL_TYPE
     RESUME,
     END,
 };
+
+inline void debugPlayerCommand(CONTL_TYPE type)
+{
+    QString str;
+    switch (type)
+    {
+    case PLAY:
+        str = "PLAY";
+        break;
+    case PAUSE:
+        str = "PAUSE";
+        break;
+    case RESUME:
+        str = "RESUME";
+        break;
+    case END:
+        str = "END";
+        break;
+    default:
+        str = "NONE";
+        break;
+    }
+    qDebug() << "player command:" << str;
+}

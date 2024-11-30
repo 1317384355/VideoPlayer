@@ -22,6 +22,7 @@ void VideoThread::recvVideoData(uint8_t *data, int pixelWidth, int pixelHeight, 
     // qDebug() << "ptr-recvVideoData" << pixel;
     emit videoDataUsed();
     emit getAudioClock(&audioClock);
+
     int sleepTime = pts - audioClock;
     if (sleepTime > 0)
         QThread::msleep(sleepTime);

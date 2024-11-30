@@ -14,6 +14,8 @@ signals:
     void audioDataUsed();
     void audioOutputReady();
 
+    void audioClockChanged(int pts_seconds, QString pts_str);
+
 public slots:
     void recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts);
 
@@ -32,7 +34,8 @@ private:
     int sample_rate = -1;
     int nb_channels = -1;
 
-    double cur_pts = 0; // 上一个包的时间戳(单位ms)
+    int lastPtsSeconds = 0;
+    double curPtsMs = 0; // 当前包的时间戳(单位ms)
 
     // 输出音频帧
     void outputAudioFrame(uint8_t *audioBuffer, int bufferSize);

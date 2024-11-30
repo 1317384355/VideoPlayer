@@ -20,10 +20,11 @@ public slots:
     void receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight);
 
 private:
+    int curGLWidgetFormat{-2};
     BaseOpenGLWidget *glWidget = nullptr; // OpenGL窗口
 
 public:
-    explicit FrameWidget(QWidget *parent = nullptr) : QWidget(parent) {}
+    explicit FrameWidget(QWidget *parent = nullptr);
     ~FrameWidget() {}
 
     // const COpenGLWidget *glWidgetPtr() { return glWidget; }
@@ -61,9 +62,15 @@ class ControlWidget : public QWidget
 
 signals:
     void startPlay();
-    void clicked();
+    void leftClicked();
+    void rightClicked();
+    // 全屏请求
+    void fullScreenRequest();
 
 private slots:
+    // 响应音频进度条
+    void onAudioClockChanged(int pts_seconds, QString pts_str);
+
     // 响应拖动进度条, 当鼠标压下时暂停, 并保存播放状态
     void startSeek();
 
@@ -86,12 +93,13 @@ private:
     QThread *videoThread{nullptr};
     QThread *audioThread{nullptr};
 
-    int m_type;
+    int m_type{NONE};
 
     bool isPlay = false; // 保存拖动进度条前视频播放状态
 
 protected:
     virtual void mouseReleaseEvent(QMouseEvent *event) override;
+    virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
 
 public:
     ControlWidget(QWidget *parent = nullptr);
@@ -105,6 +113,7 @@ public:
 
 class CMediaDialog : public QWidget
 {
+    Q_OBJECT
 private:
     ControlWidget *controlWidget{nullptr};
     FrameWidget *frameWidget{nullptr};

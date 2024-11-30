@@ -32,24 +32,25 @@ const char *nv12_fsrc =
     "    rgb = mat3( 1,       1,         1,         \n"
     "                0,       -0.39465,  2.03211,   \n"
     "                1.13983, -0.58060,  0) * yuv;  \n"
-    "gl_FragColor = vec4(rgb, 1); \n"
+    "    gl_FragColor = vec4(rgb, 1); \n"
     "}\n";
-const char *yuv420_fsrc = "varying vec2 textureOut; \
-        uniform sampler2D textureY; \
-        uniform sampler2D textureU; \
-        uniform sampler2D textureV; \
-        void main(void) \
-    { \
-            vec3 yuv; \
-            vec3 rgb; \
-            yuv.x = texture2D(textureY, textureOut).r; \
-            yuv.y = texture2D(textureU, textureOut).r - 0.5; \
-            yuv.z = texture2D(textureV, textureOut).r - 0.5; \
-            rgb = mat3( 1,       1,         1, \
-                   0,       -0.39465,  2.03211, \
-                   1.13983, -0.58060,  0) * yuv; \
-            gl_FragColor = vec4(rgb, 1); \
-    }";
+const char *yuv420_fsrc =
+    "varying vec2 textureOut; \n"
+    "uniform sampler2D textureY; \n"
+    "uniform sampler2D textureU; \n"
+    "uniform sampler2D textureV; \n"
+    "void main(void) \n"
+    "{ \n"
+    "    vec3 yuv; \n"
+    "    vec3 rgb; \n"
+    "    yuv.x = texture2D(textureY, textureOut).r; \n"
+    "    yuv.y = texture2D(textureU, textureOut).r - 0.5; \n"
+    "    yuv.z = texture2D(textureV, textureOut).r - 0.5; \n"
+    "    rgb = mat3( 1,       1,         1, \n"
+    "                0,       -0.39465,  2.03211, \n"
+    "                1.13983, -0.58060,  0) * yuv; \n"
+    "    gl_FragColor = vec4(rgb, 1); \n"
+    "  }\n";
 
 static const GLfloat yuv420_vertices[]{
     // 顶点坐标

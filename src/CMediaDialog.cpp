@@ -13,6 +13,7 @@
 
 CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
 {
+    this->setStyleSheet("background-color: rgb(0, 0, 0);");
     QStackedLayout *stackedLayout = new QStackedLayout(this);
     stackedLayout->setContentsMargins(0, 0, 0, 0);
     this->setLayout(stackedLayout);
@@ -28,6 +29,23 @@ CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
     stackedLayout->setStackingMode(QStackedLayout::StackAll);
     connect(controlWidget->decodethPtr(), &Decode::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
     connect(controlWidget->videothPtr(), &VideoThread::sendFrame, frameWidget, &FrameWidget::receviceFrame);
+    connect(controlWidget, ControlWidget::fullScreenRequest, [=]() { //
+        // qDebug() << "fullScreenRequest";
+        if (this->isFullScreen())
+        {
+            if (this->parentWidget())
+                this->parentWidget()->show();
+            setWindowFlags(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint);
+            showNormal();
+        }
+        else
+        { // // 窗口全屏化
+            if (this->parentWidget())
+                this->parentWidget()->hide();
+            setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+            showFullScreen();
+        }
+    });
 }
 
 ControlWidget::ControlWidget(QWidget *parent)
@@ -40,6 +58,7 @@ ControlWidget::ControlWidget(QWidget *parent)
 
     { // 进度条组(进度条+时间标签), 合并起来方便做动画 显示/隐藏
         sliderWidget = new QWidget(this);
+        sliderWidget->setStyleSheet("background-color: transparent;");
         layout->addWidget(sliderWidget);
         sliderWidget->setLayout(new QHBoxLayout(sliderWidget));
         sliderWidget->layout()->setContentsMargins(0, 0, 0, 0);
@@ -50,6 +69,7 @@ ControlWidget::ControlWidget(QWidget *parent)
         slider->setRange(0, 0);
 
         timeLabel = new QLabel("00:00:00", this);
+        timeLabel->setStyleSheet("color: rgb(255, 255, 255);");
         sliderWidget->layout()->addWidget(timeLabel);
     }
 
@@ -66,6 +86,7 @@ ControlWidget::ControlWidget(QWidget *parent)
     connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput);
     connect(decode_th, &Decode::sendAudioData, audio_th, &AudioThread::recvAudioData);
     connect(audio_th, &AudioThread::audioOutputReady, this, &ControlWidget::startPlay);
+    connect(audio_th, &AudioThread::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
     connect(audio_th, &AudioThread::audioDataUsed, decode_th, &Decode::onAudioDataUsed, Qt::DirectConnection); // 必须直连
 
     video_th = new VideoThread();
@@ -87,7 +108,6 @@ ControlWidget::ControlWidget(QWidget *parent)
     // connect(actES, &QAction::triggered, [=]() { //
     //     video_th->endSava();
     // });
-    connect(this, &ControlWidget::clicked, this, &ControlWidget::changePlayState);
 
     connect(slider, &CSlider::sliderClicked, this, &ControlWidget::startSeek);
     // connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
@@ -107,11 +127,22 @@ ControlWidget::~ControlWidget()
 
 void ControlWidget::showVideo(const QString &path)
 {
+    if (m_type != CONTL_TYPE::NONE)
+    {
+        terminatePlay();
+        QThread::msleep(100);
+    }
     decode_th->setVideoPath(path);
-    int64_t duration = decode_th->getDuration();
-    slider->setRange(0, duration);
-    timeLabel->setText(QString::asprintf("%02d:%02d:%02d", duration / 1000 / 3600, duration / 1000 / 60 % 60, duration / 1000 % 60));
+    int64_t duration_ms = decode_th->getDuration();
+    int duration_s = static_cast<int>(duration_ms / 1000);
+    slider->setRange(0, duration_s);
+    timeLabel->setText(QString::asprintf("%02d:%02d:%02d", duration_s / 3600, duration_s / 60 % 60, duration_s % 60));
     m_type = CONTL_TYPE::PLAY;
+}
+void ControlWidget::onAudioClockChanged(int pts_seconds, QString pts_str)
+{
+    slider->setValue(pts_seconds);
+    timeLabel->setText(pts_str);
 }
 
 void ControlWidget::changePlayState()
@@ -165,10 +196,21 @@ void ControlWidget::mouseReleaseEvent(QMouseEvent *event)
     if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
     {
         if (event->button() == Qt::LeftButton)
-            emit this->clicked();
+            changePlayState();
         else if (event->button() == Qt::RightButton)
             sliderWidget->setVisible(!sliderWidget->isVisible());
         // menu->exec(event->globalPos());
+    }
+}
+
+void ControlWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
+    {
+        if (event->button() == Qt::LeftButton)
+            emit fullScreenRequest();
+        // else if (event->button() == Qt::RightButton)
+        //     sliderWidget->setVisible(!sliderWidget->isVisible());
     }
 }
 
@@ -221,14 +263,19 @@ void CSlider::setRange(int min, int max)
     QSlider::setRange(min, max);
 }
 
+FrameWidget::FrameWidget(QWidget *parent) : QWidget(parent)
+{
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    this->setLayout(layout);
+    layout->setContentsMargins(0, 0, 0, 0);
+}
+
 void FrameWidget::onInitVideoOutput(int format)
 {
-    if (this->layout() == nullptr)
-    {
-        QVBoxLayout *layout = new QVBoxLayout(this);
-        this->setLayout(layout);
-        layout->setContentsMargins(0, 0, 0, 0);
-    }
+    if (curGLWidgetFormat == format)
+        return; // 避免重复创建
+
+    curGLWidgetFormat = format;
 
     if (glWidget)
         delete glWidget;
