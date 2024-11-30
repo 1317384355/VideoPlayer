@@ -171,6 +171,7 @@ void ControlWidget::changePlayState()
         break;
     }
     emit ControlWidget::startPlay();
+    debugPlayerCommand((CONTL_TYPE)m_type);
 }
 
 void ControlWidget::startSeek()
@@ -190,7 +191,7 @@ void ControlWidget::terminatePlay()
     m_type = CONTL_TYPE::END;
 }
 
-void ControlWidget::mouseReleaseEvent(QMouseEvent *event)
+void ControlWidget::mousePressEvent(QMouseEvent *event)
 {
     // 如果鼠标的点在label内部
     if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
@@ -203,16 +204,16 @@ void ControlWidget::mouseReleaseEvent(QMouseEvent *event)
     }
 }
 
-void ControlWidget::mouseDoubleClickEvent(QMouseEvent *event)
-{
-    if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
-    {
-        if (event->button() == Qt::LeftButton)
-            emit fullScreenRequest();
-        // else if (event->button() == Qt::RightButton)
-        //     sliderWidget->setVisible(!sliderWidget->isVisible());
-    }
-}
+// void ControlWidget::mouseDoubleClickEvent(QMouseEvent *event)
+// {
+//     if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
+//     {
+//         if (event->button() == Qt::LeftButton)
+//             emit fullScreenRequest();
+//         // else if (event->button() == Qt::RightButton)
+//         //     sliderWidget->setVisible(!sliderWidget->isVisible());
+//     }
+// }
 
 void CSlider::mousePressEvent(QMouseEvent *event)
 {

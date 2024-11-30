@@ -98,8 +98,8 @@ private:
     bool isPlay = false; // 保存拖动进度条前视频播放状态
 
 protected:
-    virtual void mouseReleaseEvent(QMouseEvent *event) override;
-    virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
+    virtual void mousePressEvent(QMouseEvent *event) override;
+    // virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
 
 public:
     ControlWidget(QWidget *parent = nullptr);
