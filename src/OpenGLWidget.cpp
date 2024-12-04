@@ -1,10 +1,5 @@
 #include "OpenGLWidget.h"
 
-extern "C"
-{
-#include <libavutil/pixfmt.h>
-}
-
 #define VERTEXIN 0
 #define TEXTUREIN 1
 

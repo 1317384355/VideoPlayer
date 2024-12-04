@@ -29,7 +29,7 @@ CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
     stackedLayout->setStackingMode(QStackedLayout::StackAll);
     connect(controlWidget->decodethPtr(), &Decode::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
     connect(controlWidget->videothPtr(), &VideoThread::sendFrame, frameWidget, &FrameWidget::receviceFrame);
-    connect(controlWidget, ControlWidget::fullScreenRequest, [=]() { //
+    connect(controlWidget, &ControlWidget::fullScreenRequest, [=]() { //
         // qDebug() << "fullScreenRequest";
         if (this->isFullScreen())
         {

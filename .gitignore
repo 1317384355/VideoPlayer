@@ -4,3 +4,4 @@ build/
 *.txt
 !CMakeLists.txt
 demo.pro.user.*
+*.exe

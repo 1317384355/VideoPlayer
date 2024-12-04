@@ -33,10 +33,9 @@ SOURCES += \
     src/main.cpp \
     src/VideoThread.cpp
 
-LIBS += D:/lib/OpenCV/x64/mingw/lib/libopencv_*.a
-INCLUDEPATH += D:/lib/OpenCV/include
-DEPENDPATH += D:/lib/OpenCV/include
+# $$PWD 表示pro文件的当前路径
+LIBS += $$PWD/lib/ffmpeg/lib/*.lib
+INCLUDEPATH += $$PWD/lib/ffmpeg/include
+DEPENDPATH += $$PWD/lib/ffmpeg/include
 
-LIBS += D:/lib/ffmpeg/lib/*.a
-INCLUDEPATH += D:/lib/ffmpeg/include
-DEPENDPATH += D:/lib/ffmpeg/include
+DESTDIR = $$PWD/exe_path
