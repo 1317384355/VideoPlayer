@@ -294,14 +294,14 @@ void Decode::decodePacket()
         {
             // qDebug() << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz") << "decodePacket";
             if (av_read_frame(formatContext, &packet) < 0)
-                throw QString("av_read_frame error");
+                throw CONTL_TYPE::END;
 
             if (packet.stream_index == audioStreamIndex)
             {
                 while (!isAudioPacketEmpty)
                 {
                     if (*m_type != CONTL_TYPE::PLAY)
-                        throw QString("m_type != PLAY, in audio packet");
+                        throw *m_type;
                     QThread::msleep(10);
                 }
 
@@ -351,7 +351,7 @@ void Decode::decodePacket()
                         while (!isVideoPacketEmpty)
                         {
                             if (*m_type != CONTL_TYPE::PLAY)
-                                throw QString("m_type != PLAY, in video packet");
+                                throw *m_type;
                             QThread::msleep(10);
                         }
 
@@ -390,10 +390,11 @@ void Decode::decodePacket()
             av_packet_unref(&packet);
         }
     }
-    catch (const QString &str)
+    catch (int controlType)
     {
-        qDebug() << "throw:" << str;
-        debugPlayerCommand(CONTL_TYPE(*m_type));
+        if (controlType == CONTL_TYPE::END)
+            emit playOver();
+        debugPlayerCommand(CONTL_TYPE(controlType));
     }
 
     qDebug() << "Decode::decodePacket() end";

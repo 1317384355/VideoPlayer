@@ -13,13 +13,11 @@
 
 CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
 {
-    this->setStyleSheet("background-color: rgb(0, 0, 0);");
     QStackedLayout *stackedLayout = new QStackedLayout(this);
     stackedLayout->setContentsMargins(0, 0, 0, 0);
     this->setLayout(stackedLayout);
 
     frameWidget = new FrameWidget(this);
-    // frameWidget->setStyleSheet("background-color: rgb(255, 0, 0);");
     stackedLayout->addWidget(frameWidget);
 
     controlWidget = new ControlWidget(this);
@@ -29,26 +27,29 @@ CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
     stackedLayout->setStackingMode(QStackedLayout::StackAll);
     connect(controlWidget->decodethPtr(), &Decode::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
     connect(controlWidget->videothPtr(), &VideoThread::sendFrame, frameWidget, &FrameWidget::receviceFrame);
-    connect(controlWidget, &ControlWidget::fullScreenRequest, [=]() { //
-        // qDebug() << "fullScreenRequest";
-        if (this->isFullScreen())
-        {
-            if (this->parentWidget())
-                this->parentWidget()->show();
-            setWindowFlags(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint);
-            showNormal();
-        }
-        else
-        { // // 窗口全屏化
-            if (this->parentWidget())
-                this->parentWidget()->hide();
-            setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
-            showFullScreen();
-        }
-    });
+    // connect(controlWidget, &ControlWidget::fullScreenRequest, this, &CMediaDialog::onFullScreenRequest);
 }
 
-ControlWidget::ControlWidget(QWidget *parent)
+void CMediaDialog::onFullScreenRequest()
+{
+    // qDebug() << "onFullScreenRequest";
+    if (this->isFullScreen())
+    {
+        if (this->parentWidget())
+            this->parentWidget()->show();
+        setWindowFlags(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint);
+        showNormal();
+    }
+    else
+    { // // 窗口全屏化
+        if (this->parentWidget())
+            this->parentWidget()->hide();
+        setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+        showFullScreen();
+    }
+}
+
+ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -58,19 +59,51 @@ ControlWidget::ControlWidget(QWidget *parent)
 
     { // 进度条组(进度条+时间标签), 合并起来方便做动画 显示/隐藏
         sliderWidget = new QWidget(this);
-        sliderWidget->setStyleSheet("background-color: transparent;");
         layout->addWidget(sliderWidget);
         sliderWidget->setLayout(new QHBoxLayout(sliderWidget));
         sliderWidget->layout()->setContentsMargins(0, 0, 0, 0);
 
-        slider = new CSlider(Qt::Horizontal, this);
+        timeLabel = new QLabel("00:00:00", sliderWidget);
+        timeLabel->setStyleSheet("color: white;");
+        sliderWidget->layout()->addWidget(timeLabel);
+
+        slider = new CSlider(Qt::Horizontal, sliderWidget);
+        // 滑块设置圆角
+        slider->setStyleSheet(R"(
+        background-color: transparent;
+
+        QSlider::groove:horizontal {
+            border: 1px solid #999999;
+            height: 5px;
+            background: #c4c4c4;
+            /*margin: 2px 0;*/
+        }
+        QSlider::handle:horizontal {
+            background: qradialgradient(spread:pad, cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0.6 #4CC2FF, stop:0.8 #5c5c5c);
+            border: 2px solid #5c5c5c;
+            width: 17px;
+            height: 18px;
+            margin: -8px 0; 
+            border-radius: 10px;
+        }
+        QSlider::sub-page:horizontal {
+            background: #4CC2FF; /* 滑块走过的部分颜色 */
+        }
+        QSlider::add-page:horizontal {
+            background: #c4c4c4; /* 滑块未走过的部分颜色 */
+        })");
         sliderWidget->layout()->addWidget(slider);
         slider->setValue(0);
         slider->setRange(0, 0);
 
-        timeLabel = new QLabel("00:00:00", this);
-        timeLabel->setStyleSheet("color: rgb(255, 255, 255);");
-        sliderWidget->layout()->addWidget(timeLabel);
+        totalTimeLabel = new QLabel("00:00:00", sliderWidget);
+        totalTimeLabel->setStyleSheet("color: white;");
+        sliderWidget->layout()->addWidget(totalTimeLabel);
+
+        btn = new QPushButton("test", sliderWidget);
+        btn->setStyleSheet("background-color: white;");
+        sliderWidget->layout()->addWidget(btn);
+        connect(btn, &QPushButton::clicked, this, &ControlWidget::terminatePlay);
     }
 
     decode_th = new Decode(&m_type);
@@ -78,6 +111,7 @@ ControlWidget::ControlWidget(QWidget *parent)
     decode_th->moveToThread(decodeThread);
     decodeThread->start();
     connect(this, &ControlWidget::startPlay, decode_th, &Decode::decodePacket);
+    connect(decode_th, &Decode::playOver, this, &ControlWidget::terminatePlay);
 
     audio_th = new AudioThread();
     audioThread = new QThread();
@@ -136,7 +170,7 @@ void ControlWidget::showVideo(const QString &path)
     int64_t duration_ms = decode_th->getDuration();
     int duration_s = static_cast<int>(duration_ms / 1000);
     slider->setRange(0, duration_s);
-    timeLabel->setText(QString::asprintf("%02d:%02d:%02d", duration_s / 3600, duration_s / 60 % 60, duration_s % 60));
+    totalTimeLabel->setText(QString::asprintf("%02d:%02d:%02d", duration_s / 3600, duration_s / 60 % 60, duration_s % 60));
     m_type = CONTL_TYPE::PLAY;
 }
 void ControlWidget::onAudioClockChanged(int pts_seconds, QString pts_str)
@@ -269,10 +303,20 @@ FrameWidget::FrameWidget(QWidget *parent) : QWidget(parent)
     QVBoxLayout *layout = new QVBoxLayout(this);
     this->setLayout(layout);
     layout->setContentsMargins(0, 0, 0, 0);
+    backgroundWidget = new QWidget(this);
+    backgroundWidget->setStyleSheet("background-color: black;");
+    layout->addWidget(backgroundWidget);
 }
 
 void FrameWidget::onInitVideoOutput(int format)
 {
+    if (backgroundWidget)
+    {
+        this->layout()->removeWidget(backgroundWidget);
+        delete backgroundWidget;
+        backgroundWidget = nullptr;
+    }
+
     if (curGLWidgetFormat == format)
         return; // 避免重复创建
 

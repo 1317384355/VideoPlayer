@@ -32,6 +32,7 @@ class Decode : public QObject
     Q_OBJECT
 signals:
     void startPlay();
+    void playOver();
     void initAudioOutput(int sampleRate, int channels);
     void initVideoOutput(int format);
 

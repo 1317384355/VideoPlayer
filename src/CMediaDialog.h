@@ -10,6 +10,7 @@
 #include <QMouseEvent>
 #include <QSlider>
 #include <QWidget>
+#include <QPushButton>
 
 // 画面窗口
 class FrameWidget : public QWidget
@@ -22,6 +23,7 @@ public slots:
 private:
     int curGLWidgetFormat{-2};
     BaseOpenGLWidget *glWidget = nullptr; // OpenGL窗口
+    QWidget *backgroundWidget = nullptr;  // 背景窗口
 
 public:
     explicit FrameWidget(QWidget *parent = nullptr);
@@ -84,6 +86,8 @@ private:
     QWidget *sliderWidget{nullptr};
     CSlider *slider{nullptr};
     QLabel *timeLabel{nullptr};
+    QLabel *totalTimeLabel{nullptr};
+    QPushButton *btn{nullptr}; // 测试用
     QMenu *menu{nullptr};
 
     Decode *decode_th{nullptr};
@@ -114,6 +118,10 @@ public:
 class CMediaDialog : public QWidget
 {
     Q_OBJECT
+
+public slots:
+    void onFullScreenRequest();
+
 private:
     ControlWidget *controlWidget{nullptr};
     FrameWidget *frameWidget{nullptr};

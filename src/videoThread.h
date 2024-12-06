@@ -19,8 +19,6 @@ private:
     // double lastPtsMs = 0;     // 上一个包的时间戳(单位ms)
     double audioClock;
 
-    uint8_t **copyData(uint8_t **data, int *linesize, int pixelWidth, int pixelHeight);
-
 public:
     VideoThread(QObject *parent = nullptr);
     ~VideoThread();
