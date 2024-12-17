@@ -5,7 +5,7 @@
 
 const char *vsrc =
     "attribute vec4 vertexIn; \n"
-    "attribute vec4 textureIn; \n"
+    "attribute vec2 textureIn; \n"
     "varying vec2 textureOut;  \n"
     "void main(void)           \n"
     "{                         \n"
@@ -101,6 +101,10 @@ void BaseOpenGLWidget::initShader(const void *vertices, int count, const char *f
 
 void BaseOpenGLWidget::setPixelData(uint8_t *pixelData, int width, int height)
 {
+    if (pixelData == nullptr)
+        return;
+    else
+        delete[] dataPtr;
     dataPtr = pixelData;
     videoW = width;
     videoH = height;
@@ -123,9 +127,6 @@ void Nv12GLWidget::initializeGL()
 
 void Nv12GLWidget::paintGL()
 {
-    if (dataPtr == nullptr)
-        return;
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 注释后画面卡死
     glDisable(GL_DEPTH_TEST);                           // 关闭深度测试, 注释后内存占用增加
     glViewport(0, 0, width(), height());
@@ -138,9 +139,6 @@ void Nv12GLWidget::paintGL()
     // glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); //  GL_TRIANGLE_STRIP会导致屏幕左侧出现一个三角形
     // glDrawArrays(GL_TRIANGLE_FAN, 0, 4); // 与GL_QUADS效果相同, 原因暂不清楚
     glDrawArrays(GL_QUADS, 0, 4);
-
-    delete[] dataPtr;
-    dataPtr = nullptr;
 }
 
 void Yuv420GLWidget::initializeGL()
@@ -163,9 +161,6 @@ void Yuv420GLWidget::initializeGL()
 
 void Yuv420GLWidget::paintGL()
 {
-    if (dataPtr == nullptr)
-        return;
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 注释后画面卡死
     glDisable(GL_DEPTH_TEST);                           // 关闭深度测试, 注释后内存占用增加
     glViewport(0, 0, width(), height());
@@ -181,7 +176,4 @@ void Yuv420GLWidget::paintGL()
     glUniform1i(textureUniformU, 1);
     glUniform1i(textureUniformV, 2);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-    delete[] dataPtr;
-    dataPtr = nullptr;
 }

@@ -11,7 +11,7 @@ include_directories("./lib/ffmpeg/include")          # 引入外部头文件
 link_directories(${CMAKE_SOURCE_DIR}/lib/ffmpeg/lib) # 引入动态链接库
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -L${CMAKE_SOURCE_DIR}/lib/ffmpeg/lib") # 引入动态链接库, 与link_directories()效果等同
 
-SET(EXECUTABLE_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/exe_path) # 设置可执行文件输出路径
+SET(EXECUTABLE_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/bin) # 设置可执行文件输出路径
 
 find_package(Qt5 COMPONENTS Widgets Core Multimedia REQUIRED) # Qt COMPONENTS
 

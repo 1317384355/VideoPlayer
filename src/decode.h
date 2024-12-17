@@ -34,10 +34,12 @@ signals:
     void startPlay();
     void playOver();
     void initAudioOutput(int sampleRate, int channels);
+    void initVideoThread(AVCodecContext *videoCodecContext, int hw_device_type, double time_base_q2d);
     void initVideoOutput(int format);
 
     void sendAudioData(uint8_t *audioBuffer, int bufferSize, double pts);
-    void sendVideoData(uint8_t *videoData, int frameWidth, int frameHeight, double pts);
+
+    void sendVideoPacket(AVPacket *packet);
 
 public slots:
     // 响应拖动进度条, 跳转到帧并返回这一帧画面
@@ -45,6 +47,8 @@ public slots:
 
     void onAudioDataUsed();
     void onVideoDataUsed();
+
+    void onVideoQueueStatus(int status);
 
     // 开始播放
     void decodePacket();
@@ -71,18 +75,20 @@ public:
     };
 
 private:
+    QList<AVHWDeviceType> devices; // 设备支持的硬解码器, 在类初始化时遍历获取
+
     AVFormatContext *formatContext; // 用于处理媒体文件格式的结构, 包含了许多用于描述文件格式和元数据的信息
     AVCodecContext *videoCodecContext;
     AVCodecContext *audioCodecContext;
-    const AVCodecHWConfig *config = nullptr; // 硬解码器
-    enum AVPixelFormat hw_device_pixel = AV_PIX_FMT_NONE;
 
-    enum AVHWDeviceType type = AV_HWDEVICE_TYPE_NONE;
+    enum AVPixelFormat hw_device_pixel = AV_PIX_FMT_NONE;
+    enum AVHWDeviceType hw_device_type = AV_HWDEVICE_TYPE_NONE;
+    AVBufferRef *hw_device_ctx = nullptr;
 
     SwrContext *swrContext;
 
     uint8_t *convertedAudioBuffer;
-    AVPacket packet;
+    // AVPacket packet;
     int audioStreamIndex;
     int videoStreamIndex;
     FFMPEG_MEDIA_TYPE mediaType;
@@ -94,6 +100,7 @@ private:
 
     bool isAudioPacketEmpty = true;
     bool isVideoPacketEmpty = true;
+    int videoQueueStatus = 0;
 
     bool isIniting = false;
     bool isInitSuccess = false;
@@ -104,9 +111,6 @@ private:
     int initCodec(AVCodecContext **codecContext, int videoStreamIndex, const AVCodec *codec);
 
     void clean();
-
-    uint8_t *copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
-    uint8_t *copyYuv420lData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
 
     void debugError(FFMPEG_INIT_ERROR error);
 
@@ -126,4 +130,7 @@ public:
     int64_t getVideoFrameCount() const;
     // 得到总时长
     int64_t getDuration() const;
+
+    // 获取支持的硬解码器
+    QString getSupportedHwDecoderNames() const;
 };

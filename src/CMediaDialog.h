@@ -21,7 +21,7 @@ public slots:
     void receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight);
 
 private:
-    int curGLWidgetFormat{-2};
+    int curGLWidgetFormat{-1};
     BaseOpenGLWidget *glWidget = nullptr; // OpenGL窗口
     QWidget *backgroundWidget = nullptr;  // 背景窗口
 

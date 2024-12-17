@@ -38,4 +38,4 @@ LIBS += $$PWD/lib/ffmpeg/lib/*.lib
 INCLUDEPATH += $$PWD/lib/ffmpeg/include
 DEPENDPATH += $$PWD/lib/ffmpeg/include
 
-DESTDIR = $$PWD/exe_path
+DESTDIR = $$PWD/bin

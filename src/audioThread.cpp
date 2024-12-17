@@ -52,10 +52,10 @@ void AudioThread::recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts
     // qDebug() << "-----------output start------";
     memcpy(convertedAudioBuffer, audioBuffer, bufferSize);
     emit audioDataUsed();
+    curPtsMs = pts;
     int curPtsSeconds = pts / 1000;
     // 将curPtsSeconds转为时:分:秒的字符串
     QString ptsTime = QTime::fromMSecsSinceStartOfDay(pts).toString("hh:mm:ss");
-    curPtsMs = pts;
 
     while (audioOutput->bytesFree() < bufferSize)
         QThread::msleep(10);

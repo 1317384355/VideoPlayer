@@ -2,24 +2,19 @@
 #include <QImage>
 #include <QPixmap>
 #define MAX_AUDIO_FRAME_SIZE 192000
+QString av_get_pixelformat_name(AVPixelFormat format);
 
 Decode::Decode(const int *_type, QObject *parent) : m_type(_type), QObject(parent), formatContext(nullptr), videoCodecContext(nullptr), audioCodecContext(nullptr), swrContext(nullptr), convertedAudioBuffer(nullptr), audioStreamIndex(-1), videoStreamIndex(-1), mediaType(UNKNOWN), time_base_q2d(0), curPts(0)
 {
     avformat_network_init(); // Initialize FFmpeg network components
 
     // 遍历出设备支持的硬件类型
-    QList<AVHWDeviceType> devices;
     enum AVHWDeviceType print_type = AV_HWDEVICE_TYPE_NONE;
     while ((print_type = av_hwdevice_iterate_types(print_type)) != AV_HWDEVICE_TYPE_NONE)
     {
-        devices.append(print_type);
         qDebug() << "suport devices: " << av_hwdevice_get_type_name(print_type);
+        devices.append(print_type);
     }
-
-    if (devices.size() > 0)
-        type = devices[0]; // 默认使用第一个设备
-    else
-        type = AV_HWDEVICE_TYPE_NONE; // 没有设备
 }
 
 Decode::~Decode()
@@ -44,7 +39,8 @@ void Decode::setVideoPath(const QString &filePath)
         isInitSuccess = true;
         qDebug() << "init FFmpeg success";
         emit initAudioOutput(audioCodecContext->sample_rate, audioCodecContext->ch_layout.nb_channels);
-        emit initVideoOutput(hw_device_pixel);
+        emit initVideoThread(videoCodecContext, hw_device_type, time_base_q2d);
+        emit initVideoOutput(hw_device_type);
     }
     else
     {
@@ -74,18 +70,25 @@ int64_t Decode::getVideoFrameCount() const
 
 int64_t Decode::getDuration() const
 {
-    // while (isIniting)
-    // {
-    //     if (!isInitSuccess)
-    //         return -1;
-
-    //     QThread::msleep(50);
-    // }
-
     // 流的总时长 ms
     int64_t ret = (formatContext->duration / (int64_t)(AV_TIME_BASE / 1000));
     qDebug() << "duration: " << ret / 1000 / 3600 << ":" << ret / 1000 / 60 << ":" << ret / 1000 % 60;
     return ret;
+}
+
+QString Decode::getSupportedHwDecoderNames() const
+{
+    QString ret;
+    AVBufferRef *hw_device_ctx = nullptr;
+    for (auto device : devices)
+    {
+        if (av_hwdevice_ctx_create(&hw_device_ctx, device, nullptr, nullptr, 0) < 0)
+            continue;
+        else
+            av_buffer_unref(&hw_device_ctx);
+        qDebug() << " avail devices: " << av_hwdevice_get_type_name(device);
+    }
+    return QString();
 }
 
 void Decode::onAudioDataUsed()
@@ -96,6 +99,11 @@ void Decode::onAudioDataUsed()
 void Decode::onVideoDataUsed()
 {
     isVideoPacketEmpty = true;
+}
+
+void Decode::onVideoQueueStatus(int status)
+{
+    videoQueueStatus = status;
 }
 
 void Decode::setCurFrame(int64_t _curPts)
@@ -163,30 +171,37 @@ int Decode::initFFmpeg(const QString &filePath)
 
         if (videoStreamIndex != -1)
         { // Initialize video codec context
-            // 根据解码器获取支持此解码方式的硬件加速计
-            // 所有支持的硬件解码器保存在AVCodec的hw_configs变量中。对于硬件编码器来说又是单独的AVCodec
-
-            if (type != AV_HWDEVICE_TYPE_NONE)
+          // 根据解码器获取支持此解码方式的硬件加速计
+          // 所有支持的硬件解码器保存在AVCodec的hw_configs变量中。对于硬件编码器来说又是单独的AVCodec
+            if (!devices.isEmpty())
             {
+                const AVCodecHWConfig *config = nullptr; // 硬解码器
                 for (int i = 0;; i++)
                 {
                     config = avcodec_get_hw_config(videoCodec, i);
-                    if (config == NULL)
+                    if (config == nullptr)
                         break;
 
                     // 可能一个解码器对应着多个硬件加速方式，所以这里将其挑选出来
-                    if (
-                        config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == type)
+                    if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+                        devices.contains(config->device_type) &&
+                        config->pix_fmt != AV_PIX_FMT_NONE)
                     {
-                        hw_device_pixel = config->pix_fmt;
-                        qDebug() << "hw_device_pixel: " << Decode::hw_device_pixel;
-                        qDebug() << "config->pix_fmt: " << config->pix_fmt;
+                        qDebug() << "config->pix_fmt: " << av_get_pixelformat_name(config->pix_fmt);
+                        qDebug() << "config->device_type: " << av_hwdevice_get_type_name(config->device_type);
+                        if (av_hwdevice_ctx_create(&hw_device_ctx, config->device_type, nullptr, nullptr, 0) < 0)
+                        {
+                            devices.removeOne(config->device_type);
+                        }
+                        else
+                        {
+                            hw_device_pixel = config->pix_fmt;
+                            hw_device_type = config->device_type;
+                            break;
+                        }
                     }
-                    // 找到了则跳出循环
-                    if (hw_device_pixel != AV_PIX_FMT_NONE)
-                    {
-                        break;
-                    }
+                    else
+                        qDebug() << "unuseful config->device_type: " << av_hwdevice_get_type_name(config->device_type);
                 }
             }
             if (initCodec(&videoCodecContext, videoStreamIndex, videoCodec) < 0)
@@ -216,22 +231,15 @@ int Decode::initCodec(AVCodecContext **codecContext, int streamIndex, const AVCo
 
     avcodec_parameters_to_context(*codecContext, stream->codecpar);
 
-    // 如果是视频流，并且支持硬件加速，则尝试设置硬件加速
-    if (formatContext->streams[streamIndex]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && type != AV_HWDEVICE_TYPE_NONE)
+    // 如果是视频流，并且支持硬件加速，则设置硬件加速
+    if (formatContext->streams[streamIndex]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+        hw_device_type != AV_HWDEVICE_TYPE_NONE &&
+        hw_device_ctx != nullptr)
     {
-        // if(config == nullptr)
-
-        AVBufferRef *hw_device_ctx = nullptr;
-        if (av_hwdevice_ctx_create(&hw_device_ctx, type, nullptr, nullptr, 0) < 0)
-        {
-            qDebug() << "Failed to create device context.";
-        }
-        else
-        {
-            (*codecContext)->opaque = this;
-            (*codecContext)->get_format = getHwFormat;
-            (*codecContext)->hw_device_ctx = av_buffer_ref(hw_device_ctx);
-        }
+        (*codecContext)->opaque = this;
+        (*codecContext)->get_format = getHwFormat;
+        (*codecContext)->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+        av_buffer_unref(&hw_device_ctx);
     }
     qDebug() << "(*codecContext)->codec_id: " << (*codecContext)->codec_id;
     return avcodec_open2(*codecContext, codec, nullptr);
@@ -288,25 +296,26 @@ void Decode::decodePacket()
 
     AVFrame *frame = nullptr; // 帧
     frame = av_frame_alloc();
+
     try
     {
         while (*m_type == CONTL_TYPE::PLAY)
         {
             // qDebug() << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz") << "decodePacket";
-            if (av_read_frame(formatContext, &packet) < 0)
+            AVPacket *packet = av_packet_alloc();
+            if (av_read_frame(formatContext, packet) < 0)
                 throw CONTL_TYPE::END;
-
-            if (packet.stream_index == audioStreamIndex)
+            if (packet->stream_index == audioStreamIndex)
             {
+                continue;
                 while (!isAudioPacketEmpty)
                 {
                     if (*m_type != CONTL_TYPE::PLAY)
                         throw *m_type;
                     QThread::msleep(10);
                 }
-
                 // 将音频帧发送到音频解码器
-                if (avcodec_send_packet(audioCodecContext, &packet) == 0)
+                if (avcodec_send_packet(audioCodecContext, packet) == 0)
                 {
                     if (avcodec_receive_frame(audioCodecContext, frame) == 0)
                     {
@@ -338,56 +347,34 @@ void Decode::decodePacket()
                             emit sendAudioData(convertedAudioBuffer, bufferSize, framePts);
                         }
                     }
-                    curPts = packet.pts;
+                    curPts = packet->pts;
                 }
             }
-            else if (packet.stream_index == videoStreamIndex)
+            else if (packet->stream_index == videoStreamIndex)
             {
-                // 将视频帧发送到视频解码器
-                if (avcodec_send_packet(videoCodecContext, &packet) == 0)
-                {
-                    if (avcodec_receive_frame(videoCodecContext, frame) == 0)
-                    {
-                        while (!isVideoPacketEmpty)
-                        {
-                            if (*m_type != CONTL_TYPE::PLAY)
-                                throw *m_type;
-                            QThread::msleep(10);
-                        }
+                QThread::msleep(20);
+                // while (!isVideoPacketEmpty)
+                // {
+                //     if (*m_type != CONTL_TYPE::PLAY)
+                //         throw *m_type;
+                //     QThread::msleep(10);
+                // }
+                emit sendVideoPacket(packet);
+                continue;
 
-                        uint8_t *pixelData = nullptr;
+                // // 将视频帧发送到视频解码器
+                // if (avcodec_send_packet(videoCodecContext, &packet) == 0)
+                // {
+                //     isVideoPacketEmpty = false;
+                //     emit sendVideoPacket();
+                //     curPts = packet.pts;
+                // }
 
-                        if (frame->format == AV_PIX_FMT_CUDA)
-                        {
-                            // 如果采用的硬件加速, 解码后的数据还在GPU中, 所以需要通过av_hwframe_transfer_data将GPU中的数据转移到内存中
-                            // GPU解码数据格式固定为NV12, 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
-                            AVFrame *tmp_frame = av_frame_alloc();
-                            if (0 > av_hwframe_transfer_data(tmp_frame, frame, 0))
-                            {
-                                qDebug() << "av_hwframe_transfer_data fail";
-                                av_frame_free(&tmp_frame);
-                                continue;
-                            }
-                            av_frame_free(&frame);
-                            frame = tmp_frame;
-
-                            pixelData = copyNv12Data(frame->data, frame->linesize, frame->width, frame->height);
-                        }
-                        else
-                        {
-                            pixelData = copyYuv420lData(frame->data, frame->linesize, frame->width, frame->height);
-                        }
-                        double framePts = time_base_q2d * 1000 * frame->pts;
-
-                        isVideoPacketEmpty = false;
-                        emit sendVideoData(pixelData, frame->width, frame->height, framePts);
-                    }
-                    curPts = packet.pts;
-                }
+                // qDebug() << "video   end:" << QDateTime::currentMSecsSinceEpoch();
             }
 
             // 擦除缓存数据包
-            av_packet_unref(&packet);
+            av_packet_unref(packet);
         }
     }
     catch (int controlType)
@@ -400,47 +387,6 @@ void Decode::decodePacket()
     qDebug() << "Decode::decodePacket() end";
     if (frame)
         av_frame_free(&frame);
-}
-
-uint8_t *Decode::copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)
-{
-    uint8_t *pixel = new uint8_t[pixelWidth * pixelHeight * 3 / 2];
-    uint8_t *y = pixel;
-    uint8_t *uv = pixel + pixelWidth * pixelHeight;
-
-    int halfHeight = pixelHeight >> 1;
-    for (int i = 0; i < pixelHeight; i++)
-    {
-        memcpy(y + i * pixelWidth, pixelData[0] + i * linesize[0], static_cast<size_t>(pixelWidth));
-    }
-    for (int i = 0; i < halfHeight; i++)
-    {
-        memcpy(uv + i * pixelWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(pixelWidth));
-    }
-    return pixel;
-}
-
-uint8_t *Decode::copyYuv420lData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)
-{
-    uint8_t *pixel = new uint8_t[pixelHeight * pixelWidth * 3 / 2];
-    int halfWidth = pixelWidth >> 1;
-    int halfHeight = pixelHeight >> 1;
-    uint8_t *y = pixel;
-    uint8_t *u = pixel + pixelWidth * pixelHeight;
-    uint8_t *v = pixel + pixelWidth * pixelHeight + halfWidth * halfHeight;
-    for (int i = 0; i < pixelHeight; i++)
-    {
-        memcpy(y + i * pixelWidth, pixelData[0] + i * linesize[0], static_cast<size_t>(pixelWidth));
-    }
-    for (int i = 0; i < halfHeight; i++)
-    {
-        memcpy(u + i * halfWidth, pixelData[1] + i * linesize[1], static_cast<size_t>(halfWidth));
-    }
-    for (int i = 0; i < halfHeight; i++)
-    {
-        memcpy(v + i * halfWidth, pixelData[2] + i * linesize[2], static_cast<size_t>(halfWidth));
-    }
-    return pixel;
 }
 
 void Decode::debugError(FFMPEG_INIT_ERROR error)
@@ -489,13 +435,63 @@ AVPixelFormat Decode::getHwFormat(AVCodecContext *ctx, const AVPixelFormat *pix_
     return AV_PIX_FMT_NONE;
 }
 
-// for (int i = 0; i < formatContext->nb_streams; i++) {
-//     if (audioStreamIndex != -1 && videoStreamIndex != -1)
-//         break;
-//     if (audioStreamIndex == -1 && formatContext->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-//         audioStreamIndex = i;
-//         continue;
-//     }
-//     if (videoStreamIndex == -1 && formatContext->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-//         videoStreamIndex = i;
-// }
+QString av_get_pixelformat_name(AVPixelFormat format)
+{
+    QString name;
+    switch (format)
+    {
+    case AV_PIX_FMT_NONE:
+        name = "AV_PIX_FMT_NONE";
+        break;
+    case AV_PIX_FMT_YUV420P:
+        name = "AV_PIX_FMT_YUV420P";
+        break;
+    case AV_PIX_FMT_NV12:
+        name = "AV_PIX_FMT_NV12";
+        break;
+    case AV_PIX_FMT_VAAPI:
+        name = "AV_PIX_FMT_VAAPI";
+        break;
+    case AV_PIX_FMT_VIDEOTOOLBOX:
+        name = "AV_PIX_FMT_VIDEOTOOLBOX";
+        break;
+    case AV_PIX_FMT_MEDIACODEC:
+        name = "AV_PIX_FMT_MEDIACODEC";
+        break;
+    case AV_PIX_FMT_D3D11:
+        name = "AV_PIX_FMT_D3D11";
+        break;
+    case AV_PIX_FMT_OPENCL:
+        name = "AV_PIX_FMT_OPENCL";
+        break;
+    case AV_PIX_FMT_VULKAN:
+        name = "AV_PIX_FMT_VULKAN";
+        break;
+    case AV_PIX_FMT_D3D12:
+        name = "AV_PIX_FMT_D3D12";
+        break;
+    case AV_PIX_FMT_DXVA2_VLD:
+        name = "AV_PIX_FMT_DXVA2_VLD";
+        break;
+    case AV_PIX_FMT_VDPAU:
+        name = "AV_PIX_FMT_VDPAU";
+        break;
+    case AV_PIX_FMT_QSV:
+        name = "AV_PIX_FMT_QSV";
+        break;
+    case AV_PIX_FMT_MMAL:
+        name = "AV_PIX_FMT_MMAL";
+        break;
+    case AV_PIX_FMT_D3D11VA_VLD:
+        name = "AV_PIX_FMT_D3D11VA_VLD";
+        break;
+    case AV_PIX_FMT_CUDA:
+        name = "AV_PIX_FMT_CUDA";
+        break;
+
+    default:
+        name = "value:" + QString::number(format);
+        break;
+    }
+    return name;
+}

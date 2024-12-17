@@ -127,7 +127,8 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     videoThread = new QThread();
     video_th->moveToThread(videoThread);
     videoThread->start();
-    connect(decode_th, &Decode::sendVideoData, video_th, &VideoThread::recvVideoData);
+    connect(decode_th, &Decode::initVideoThread, video_th, &VideoThread::onInitVideoThread);
+    connect(decode_th, &Decode::sendVideoPacket, video_th, &VideoThread::recvVideoPacket);
     connect(video_th, &VideoThread::videoDataUsed, decode_th, &Decode::onVideoDataUsed, Qt::DirectConnection);     // 必须直连
     connect(video_th, &VideoThread::getAudioClock, audio_th, &AudioThread::onGetAudioClock, Qt::DirectConnection); // 必须直连
 
@@ -325,22 +326,17 @@ void FrameWidget::onInitVideoOutput(int format)
     if (glWidget)
         delete glWidget;
 
-    switch (format)
+    if (format == AV_HWDEVICE_TYPE_NONE)
     {
-    case AV_PIX_FMT_NONE:
         qDebug() << "YUV420GL_WIDGET";
         glWidget = new Yuv420GLWidget(this);
         this->layout()->addWidget(glWidget);
-        break;
-
-    case AV_PIX_FMT_CUDA:
+    }
+    else
+    {
         qDebug() << "NV12GL_WIDGET";
         glWidget = new Nv12GLWidget(this);
         this->layout()->addWidget(glWidget);
-        break;
-    default:
-
-        break;
     }
 }
 
@@ -348,4 +344,6 @@ void FrameWidget::receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHei
 {
     if (glWidget)
         glWidget->setPixelData(pixelData, pixelWidth, pixelHeight);
+    else if (pixelData)
+        delete pixelData;
 }
