@@ -15,7 +15,7 @@ signals:
     // 发送当前帧画面
     void sendFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight);
 
-    void getAudioClock(double *pts);
+    void getAudioClock(double &pts);
 public slots:
     void onInitVideoThread(AVCodecContext *codecContext, int hw_device_type, double time_base_q2d);
 
@@ -33,6 +33,9 @@ private:
 
     double audioClock;
     QQueue<AVPacket *> videoPacketQueue;
+
+    // 将硬件解码后的数据拷贝到内存中(但部分数据会消失, 例如pts)
+    void transferDataFromHW(AVFrame **frame);
 
     uint8_t *copyNv12Data(uint8_t **data, int *linesize, int pixelWidth, int pixelHeight);
     uint8_t *copyYuv420pData(uint8_t **data, int *linesize, int pixelWidth, int pixelHeight);

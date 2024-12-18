@@ -25,68 +25,72 @@ void VideoThread::onInitVideoThread(AVCodecContext *codecContext, int hw_device_
 
 void VideoThread::recvVideoPacket(AVPacket *packet)
 {
-    // auto packetCopy = av_packet_clone(packet);
-    // videoPacketQueue.append(packetCopy);
-    qDebug() << "recv video packet" << QDateTime::currentMSecsSinceEpoch();
-    if (avcodec_send_packet(videoCodecContext, packet) == 0)
-        decodeVideoPacket();
-    else
-        qDebug() << "avcodec_send_packet fail";
+    videoPacketQueue.append(packet);
+    decodeVideoPacket();
 }
 
 void VideoThread::decodeVideoPacket()
 {
     auto frame = av_frame_alloc();
-    int ret = avcodec_receive_frame(videoCodecContext, frame);
-    // emit videoDataUsed();
-    if (ret == 0)
+    while (!videoPacketQueue.isEmpty())
     {
-        uint8_t *pixelData = nullptr;
-        double framePts = time_base_q2d * 1000 * frame->pts;
-
-        if (hw_device_type != AV_HWDEVICE_TYPE_NONE)
+        auto packet = videoPacketQueue.takeFirst();
+        if (avcodec_send_packet(videoCodecContext, packet) == 0)
         {
-            // 如果采用的硬件加速, 解码后的数据还在GPU中, 所以需要通过av_hwframe_transfer_data将GPU中的数据转移到内存中
-            // GPU解码数据格式固定为NV12, 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
-            AVFrame *tmp_frame = av_frame_alloc();
-            if (0 > av_hwframe_transfer_data(tmp_frame, frame, 0))
+            av_packet_free(&packet);
+            if (avcodec_receive_frame(videoCodecContext, frame) == 0)
             {
-                qDebug() << "av_hwframe_transfer_data fail";
-                av_frame_free(&tmp_frame);
-                return;
+                uint8_t *pixelData = nullptr;
+                double framePts = time_base_q2d * 1000 * frame->pts;
+
+                if (hw_device_type != AV_HWDEVICE_TYPE_NONE)
+                    transferDataFromHW(&frame);
+
+                if (frame->format == AV_PIX_FMT_NV12)
+                    pixelData = copyNv12Data(frame->data, frame->linesize, frame->width, frame->height);
+                else if (frame->format == AV_PIX_FMT_YUV420P)
+                    pixelData = copyYuv420pData(frame->data, frame->linesize, frame->width, frame->height);
+                else
+                {
+                    qDebug() << "unsupported video format";
+                    break;
+                }
+
+                useVideoData(pixelData, frame->width, frame->height, framePts);
             }
-            av_frame_free(&frame);
-            frame = tmp_frame;
         }
-
-        if (frame->format == AV_PIX_FMT_NV12)
-            pixelData = copyNv12Data(frame->data, frame->linesize, frame->width, frame->height);
-        else if (frame->format == AV_PIX_FMT_YUV420P)
-            pixelData = copyYuv420pData(frame->data, frame->linesize, frame->width, frame->height);
-        else
-        {
-            qDebug() << "unsupported video format";
-            return;
-        }
-
-        useVideoData(pixelData, frame->width, frame->height, framePts);
     }
     av_frame_free(&frame);
+    emit videoDataUsed();
 }
 
 void VideoThread::useVideoData(uint8_t *data, int pixelWidth, int pixelHeight, double pts)
 {
-    // emit getAudioClock(&audioClock);
+    emit getAudioClock(audioClock);
 
-    // int sleepTime = pts - audioClock;
-    // // qDebug() << "sleepTime: " << sleepTime
-    // //          << "pts: " << QString::number(pts, 'f', 3)
-    // //          << "audioClock: " << QString::number(audioClock, 'f', 3)
-    // //          << "currentTime: " << QDateTime::currentMSecsSinceEpoch();
-    // if (sleepTime > 0)
-    //     QThread::msleep(sleepTime);
+    int sleepTime = pts - audioClock;
+    // qDebug() << "sleepTime: " << sleepTime
+    //          << "pts: " << QString::number(pts, 'f', 3)
+    //          << "audioClock: " << QString::number(audioClock, 'f', 3)
+    //          << "currentTime: " << QDateTime::currentMSecsSinceEpoch();
+    if (sleepTime > 0 && audioClock >= 0.1)
+        QThread::msleep(sleepTime);
     emit sendFrame(data, pixelWidth, pixelHeight);
-    qDebug() << "send video frame-" << QDateTime::currentMSecsSinceEpoch();
+}
+
+void VideoThread::transferDataFromHW(AVFrame **frame)
+{
+    // 如果采用的硬件加速, 解码后的数据还在GPU中, 所以需要通过av_hwframe_transfer_data将GPU中的数据转移到内存中
+    // GPU解码数据格式固定为NV12, 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
+    AVFrame *tmp_frame = av_frame_alloc();
+    if (0 > av_hwframe_transfer_data(tmp_frame, *frame, 0))
+    {
+        qDebug() << "av_hwframe_transfer_data fail";
+        av_frame_free(&tmp_frame);
+        return;
+    }
+    av_frame_free(frame);
+    *frame = tmp_frame;
 }
 
 uint8_t *VideoThread::copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)

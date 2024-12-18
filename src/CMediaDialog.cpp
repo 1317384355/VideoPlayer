@@ -117,7 +117,10 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     audioThread = new QThread();
     audio_th->moveToThread(audioThread);
     audioThread->start();
+    connect(decode_th, &Decode::initAudioThread, audio_th, &AudioThread::onInitAudioThread);
     connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput);
+    connect(decode_th, &Decode::sendAudioPacket, audio_th, &AudioThread::recvAudioPacket);
+    connect(decode_th, &Decode::decodeAudioPacket, audio_th, &AudioThread::decodeAudioPacket);
     connect(decode_th, &Decode::sendAudioData, audio_th, &AudioThread::recvAudioData);
     connect(audio_th, &AudioThread::audioOutputReady, this, &ControlWidget::startPlay);
     connect(audio_th, &AudioThread::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
@@ -129,6 +132,7 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     videoThread->start();
     connect(decode_th, &Decode::initVideoThread, video_th, &VideoThread::onInitVideoThread);
     connect(decode_th, &Decode::sendVideoPacket, video_th, &VideoThread::recvVideoPacket);
+    connect(decode_th, &Decode::decodeVideoPacket, video_th, &VideoThread::decodeVideoPacket);
     connect(video_th, &VideoThread::videoDataUsed, decode_th, &Decode::onVideoDataUsed, Qt::DirectConnection);     // 必须直连
     connect(video_th, &VideoThread::getAudioClock, audio_th, &AudioThread::onGetAudioClock, Qt::DirectConnection); // 必须直连
 

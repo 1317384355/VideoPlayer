@@ -4,7 +4,17 @@
 #define MAX_AUDIO_FRAME_SIZE 192000
 QString av_get_pixelformat_name(AVPixelFormat format);
 
-Decode::Decode(const int *_type, QObject *parent) : m_type(_type), QObject(parent), formatContext(nullptr), videoCodecContext(nullptr), audioCodecContext(nullptr), swrContext(nullptr), convertedAudioBuffer(nullptr), audioStreamIndex(-1), videoStreamIndex(-1), mediaType(UNKNOWN), time_base_q2d(0), curPts(0)
+Decode::Decode(const int *_type, QObject *parent)
+    : m_type(_type),
+      QObject(parent),
+      formatContext(nullptr),
+      videoCodecContext(nullptr),
+      audioCodecContext(nullptr),
+      audioStreamIndex(-1),
+      videoStreamIndex(-1),
+      mediaType(UNKNOWN),
+      time_base_q2d(0),
+      curPts(0)
 {
     avformat_network_init(); // Initialize FFmpeg network components
 
@@ -38,6 +48,7 @@ void Decode::setVideoPath(const QString &filePath)
         isIniting = false;
         isInitSuccess = true;
         qDebug() << "init FFmpeg success";
+        emit initAudioThread(audioCodecContext, swrContext, time_base_q2d);
         emit initAudioOutput(audioCodecContext->sample_rate, audioCodecContext->ch_layout.nb_channels);
         emit initVideoThread(videoCodecContext, hw_device_type, time_base_q2d);
         emit initVideoOutput(hw_device_type);
@@ -76,19 +87,24 @@ int64_t Decode::getDuration() const
     return ret;
 }
 
-QString Decode::getSupportedHwDecoderNames() const
+QList<QString> Decode::getSupportedHwDecoderNames()
 {
-    QString ret;
+    QList<QString> ret;
     AVBufferRef *hw_device_ctx = nullptr;
     for (auto device : devices)
     {
         if (av_hwdevice_ctx_create(&hw_device_ctx, device, nullptr, nullptr, 0) < 0)
+        {
+            devices.removeOne(device);
             continue;
-        else
-            av_buffer_unref(&hw_device_ctx);
-        qDebug() << " avail devices: " << av_hwdevice_get_type_name(device);
+        }
+
+        av_buffer_unref(&hw_device_ctx);
+        QString name = av_hwdevice_get_type_name(device);
+        ret.append(name);
+        qDebug() << " avail devices: " << name;
     }
-    return QString();
+    return ret;
 }
 
 void Decode::onAudioDataUsed()
@@ -118,6 +134,7 @@ int Decode::initFFmpeg(const QString &filePath)
     try
     {
         formatContext = avformat_alloc_context();
+        videoFormatContext = avformat_alloc_context();
 
         if (avformat_open_input(&formatContext, filePath.toUtf8().constData(), nullptr, nullptr) != 0)
         {
@@ -125,6 +142,15 @@ int Decode::initFFmpeg(const QString &filePath)
         }
 
         if (avformat_find_stream_info(formatContext, nullptr) < 0)
+        {
+            throw FIND_INFO_ERROR;
+        }
+        if (avformat_open_input(&videoFormatContext, filePath.toUtf8().constData(), nullptr, nullptr) != 0)
+        {
+            throw OPEN_STREAM_ERROR;
+        }
+
+        if (avformat_find_stream_info(videoFormatContext, nullptr) < 0)
         {
             throw FIND_INFO_ERROR;
         }
@@ -210,8 +236,6 @@ int Decode::initFFmpeg(const QString &filePath)
             }
         }
 
-        // Initialize converted audio buffer
-        convertedAudioBuffer = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE);
         time_base_q2d = av_q2d(formatContext->streams[audioStreamIndex]->time_base);
         qDebug() << "time_base_q2d: " << time_base_q2d;
     }
@@ -257,12 +281,6 @@ void Decode::clean()
     hw_device_pixel = AV_PIX_FMT_NONE;
 
     // 倒着清理
-    if (convertedAudioBuffer)
-    {
-        av_free(convertedAudioBuffer);
-        convertedAudioBuffer = nullptr;
-    }
-
     if (swrContext)
     {
         swr_free(&swrContext);
@@ -294,87 +312,21 @@ void Decode::decodePacket()
     if (*m_type != CONTL_TYPE::PLAY)
         return;
 
-    AVFrame *frame = nullptr; // 帧
-    frame = av_frame_alloc();
-
     try
     {
-        while (*m_type == CONTL_TYPE::PLAY)
+        switch (mediaType)
         {
-            // qDebug() << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz") << "decodePacket";
-            AVPacket *packet = av_packet_alloc();
-            if (av_read_frame(formatContext, packet) < 0)
-                throw CONTL_TYPE::END;
-            if (packet->stream_index == audioStreamIndex)
-            {
-                continue;
-                while (!isAudioPacketEmpty)
-                {
-                    if (*m_type != CONTL_TYPE::PLAY)
-                        throw *m_type;
-                    QThread::msleep(10);
-                }
-                // 将音频帧发送到音频解码器
-                if (avcodec_send_packet(audioCodecContext, packet) == 0)
-                {
-                    if (avcodec_receive_frame(audioCodecContext, frame) == 0)
-                    {
-                        int64_t out_nb_samples = av_rescale_rnd(
-                            swr_get_delay(swrContext, frame->sample_rate) + frame->nb_samples,
-                            44100,
-                            frame->sample_rate,
-                            AV_ROUND_UP);
-
-                        // 将音频帧转换为 PCM 格式
-                        // convertedSize：转换后音频数据的大小
-                        int convertedSize = swr_convert(
-                            swrContext,                    // 转换工具?
-                            &convertedAudioBuffer,         // 输出
-                            out_nb_samples,                // 输出大小
-                            (const uint8_t **)frame->data, // 输入
-                            frame->nb_samples);            // 输入大小
-
-                        if (convertedSize > 0)
-                        {
-                            int bufferSize = av_samples_get_buffer_size(nullptr,
-                                                                        frame->ch_layout.nb_channels,
-                                                                        convertedSize,
-                                                                        AV_SAMPLE_FMT_S16,
-                                                                        1);
-                            double framePts = time_base_q2d * 1000 * frame->pts;
-                            // 将转换后的音频数据发送到音频播放器
-                            isAudioPacketEmpty = false;
-                            emit sendAudioData(convertedAudioBuffer, bufferSize, framePts);
-                        }
-                    }
-                    curPts = packet->pts;
-                }
-            }
-            else if (packet->stream_index == videoStreamIndex)
-            {
-                QThread::msleep(20);
-                // while (!isVideoPacketEmpty)
-                // {
-                //     if (*m_type != CONTL_TYPE::PLAY)
-                //         throw *m_type;
-                //     QThread::msleep(10);
-                // }
-                emit sendVideoPacket(packet);
-                continue;
-
-                // // 将视频帧发送到视频解码器
-                // if (avcodec_send_packet(videoCodecContext, &packet) == 0)
-                // {
-                //     isVideoPacketEmpty = false;
-                //     emit sendVideoPacket();
-                //     curPts = packet.pts;
-                // }
-
-                // qDebug() << "video   end:" << QDateTime::currentMSecsSinceEpoch();
-            }
-
-            // 擦除缓存数据包
-            av_packet_unref(packet);
+        case ONLY_VIDEO:
+            decodeVideo();
+            break;
+        case ONLY_AUDIO:
+            decodeAudio();
+            break;
+        case MULTI_AUDIO_VIDEO:
+            decodeMultMedia();
+            break;
+        default:
+            throw CONTL_TYPE::END;
         }
     }
     catch (int controlType)
@@ -383,10 +335,74 @@ void Decode::decodePacket()
             emit playOver();
         debugPlayerCommand(CONTL_TYPE(controlType));
     }
+}
 
-    qDebug() << "Decode::decodePacket() end";
-    if (frame)
-        av_frame_free(&frame);
+void Decode::decodeMultMedia()
+{
+    int lastStreamIndex = -1;
+    while (*m_type == CONTL_TYPE::PLAY)
+    {
+        while (isAudioPacketEmpty == false && isVideoPacketEmpty == false)
+        {
+            if (*m_type != CONTL_TYPE::PLAY)
+                throw *m_type;
+            QThread::msleep(10);
+        }
+
+        AVPacket *packet = av_packet_alloc();
+
+        if (isAudioPacketEmpty)
+        {
+            if (av_read_frame(formatContext, packet) < 0)
+                throw CONTL_TYPE::END;
+            if (packet->stream_index == audioStreamIndex)
+            {
+                // qDebug() << "audioStreamIndex, packet->pts: " << time_base_q2d * 1000 * packet->pts;
+                // if (lastStreamIndex != audioStreamIndex)
+                // {
+                //     lastStreamIndex = audioStreamIndex;
+                //     isVideoPacketEmpty = false;
+                //     emit decodeVideoPacket();
+                // }
+                isAudioPacketEmpty = false;
+                emit sendAudioPacket(packet);
+                // emit decodeAudioPacket();
+            }
+            else
+            {
+                av_packet_unref(packet);
+            }
+        }
+        else if (isVideoPacketEmpty)
+        {
+            if (av_read_frame(videoFormatContext, packet) < 0)
+                throw CONTL_TYPE::END;
+            if (packet->stream_index == videoStreamIndex)
+            {
+                // qDebug() << "videoStreamIndex, packet->pts: " << time_base_q2d * 1000 * packet->pts;
+                // if (lastStreamIndex != videoStreamIndex)
+                // {
+                //     lastStreamIndex = videoStreamIndex;
+                //     isAudioPacketEmpty = false;
+                //     emit decodeAudioPacket();
+                // }
+                isVideoPacketEmpty = false;
+                emit sendVideoPacket(packet);
+                // emit decodeVideoPacket();
+            }
+        }
+
+        // 擦除缓存数据包
+        // av_packet_unref(packet);
+    }
+}
+
+void Decode::decodeAudio()
+{
+}
+
+void Decode::decodeVideo()
+{
 }
 
 void Decode::debugError(FFMPEG_INIT_ERROR error)

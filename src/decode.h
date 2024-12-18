@@ -14,6 +14,8 @@ extern "C"
 #include <QDebug>
 #include <QThread>
 
+// Q_DECLARE_METATYPE(SwrContext)
+
 struct packets
 {
     enum PACKET_TYPE
@@ -33,13 +35,18 @@ class Decode : public QObject
 signals:
     void startPlay();
     void playOver();
+    void initAudioThread(AVCodecContext *audioCodecContext, void *swrContext, double time_base_q2d);
     void initAudioOutput(int sampleRate, int channels);
     void initVideoThread(AVCodecContext *videoCodecContext, int hw_device_type, double time_base_q2d);
     void initVideoOutput(int format);
 
     void sendAudioData(uint8_t *audioBuffer, int bufferSize, double pts);
 
+    void sendAudioPacket(AVPacket *packet);
     void sendVideoPacket(AVPacket *packet);
+
+    void decodeAudioPacket();
+    void decodeVideoPacket();
 
 public slots:
     // 响应拖动进度条, 跳转到帧并返回这一帧画面
@@ -78,6 +85,9 @@ private:
     QList<AVHWDeviceType> devices; // 设备支持的硬解码器, 在类初始化时遍历获取
 
     AVFormatContext *formatContext; // 用于处理媒体文件格式的结构, 包含了许多用于描述文件格式和元数据的信息
+
+    AVFormatContext *audioFormatContext;
+    AVFormatContext *videoFormatContext;
     AVCodecContext *videoCodecContext;
     AVCodecContext *audioCodecContext;
 
@@ -85,9 +95,8 @@ private:
     enum AVHWDeviceType hw_device_type = AV_HWDEVICE_TYPE_NONE;
     AVBufferRef *hw_device_ctx = nullptr;
 
-    SwrContext *swrContext;
+    SwrContext *swrContext{nullptr};
 
-    uint8_t *convertedAudioBuffer;
     // AVPacket packet;
     int audioStreamIndex;
     int videoStreamIndex;
@@ -116,6 +125,10 @@ private:
 
     static AVPixelFormat getHwFormat(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts);
 
+    void decodeMultMedia();
+    void decodeAudio();
+    void decodeVideo();
+
 public:
     explicit Decode(const int *_type, QObject *parent = nullptr);
     ~Decode();
@@ -132,5 +145,5 @@ public:
     int64_t getDuration() const;
 
     // 获取支持的硬解码器
-    QString getSupportedHwDecoderNames() const;
+    QList<QString> getSupportedHwDecoderNames();
 };
