@@ -17,28 +17,15 @@ signals:
 
     void getAudioClock(double &pts);
 public slots:
-    void onInitVideoThread(AVCodecContext *codecContext, int hw_device_type, double time_base_q2d);
+    void setVideoDecoder(VideoDecoder *decoder);
 
     void recvVideoPacket(AVPacket *packet);
-    void decodeVideoPacket();
-
-    void useVideoData(uint8_t *data, int pixelWidth, int pixelHeight, double pts);
+    void recvVideoFrame(uint8_t *data, int pixelWidth, int pixelHeight, double pts);
 
 private:
     // double lastPtsMs = 0;     // 上一个包的时间戳(单位ms)
-
-    double time_base_q2d;
-    AVCodecContext *videoCodecContext;
-    enum AVHWDeviceType hw_device_type = AV_HWDEVICE_TYPE_NONE;
-
+    VideoDecoder *decoder;
     double audioClock;
-    QQueue<AVPacket *> videoPacketQueue;
-
-    // 将硬件解码后的数据拷贝到内存中(但部分数据会消失, 例如pts)
-    void transferDataFromHW(AVFrame **frame);
-
-    uint8_t *copyNv12Data(uint8_t **data, int *linesize, int pixelWidth, int pixelHeight);
-    uint8_t *copyYuv420pData(uint8_t **data, int *linesize, int pixelWidth, int pixelHeight);
 
 public:
     VideoThread(QObject *parent = nullptr);

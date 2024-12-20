@@ -5,32 +5,27 @@
 AudioThread::AudioThread(QObject *parent)
     : QObject(parent)
 {
-    // Initialize converted audio buffer
-    convertedAudioBuffer = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE);
 }
 
 AudioThread::~AudioThread()
 {
     clean();
-    av_free(convertedAudioBuffer);
 }
 
-void AudioThread::onInitAudioThread(AVCodecContext *audioCodecContext, void *swrContext, double time_base_q2d)
+void AudioThread::setAudioDecoder(AudioDecoder *audioDecoder)
 {
-    clean();
-    this->audioCodecContext = audioCodecContext;
-    this->swrContext = static_cast<SwrContext *>(swrContext);
-    this->time_base_q2d = time_base_q2d;
+    this->audioDecoder = audioDecoder;
+    connect(audioDecoder, &AudioDecoder::sendAudioBuffer, this, &AudioThread::recvAudioBuffer);
 }
 
 void AudioThread::onInitAudioOutput(int sampleRate, int channels)
 {
-    sample_rate = sampleRate;
-    nb_channels = channels;
+    clean();
+    bytes_per_sec = sampleRate * channels * 2;
 
     QAudioFormat format;
-    format.setSampleRate(sample_rate);
-    format.setChannelCount(nb_channels);
+    format.setSampleRate(sampleRate);
+    format.setChannelCount(channels);
     format.setSampleSize(16);
     format.setCodec("audio/pcm");
     format.setByteOrder(QAudioFormat::LittleEndian);
@@ -48,11 +43,6 @@ void AudioThread::onGetAudioClock(double &pts)
 
     // 输出流中未播放数据大小
     int buf_size = audioOutput->bufferSize();
-    if (buf_size <= 0)
-        return;
-
-    // 参考FPS (帧数/秒), 此处为 比特数/秒
-    int bytes_per_sec = sample_rate * nb_channels * 2;
 
     // 当前时间戳 - 输出流中缓存数据 可播放时长
     pts = (curPtsMs - static_cast<double>(buf_size) / bytes_per_sec);
@@ -60,68 +50,14 @@ void AudioThread::onGetAudioClock(double &pts)
 
 void AudioThread::recvAudioPacket(AVPacket *packet)
 {
-    if (packet == nullptr || audioOutput == nullptr)
-        return;
-
-    audioPacketQueue.append(packet);
-    decodeAudioPacket();
+    if (packet != nullptr && audioOutput != nullptr)
+        audioDecoder->decodeAudioPacket(packet);
 }
 
-void AudioThread::decodeAudioPacket()
+void AudioThread::recvAudioBuffer(uint8_t *audioBuffer, int bufferSize, double pts)
 {
-    auto frame = av_frame_alloc();
-    while (!audioPacketQueue.isEmpty())
-    {
-        auto packet = audioPacketQueue.takeFirst();
-        // 将音频帧发送到音频解码器
-        if (avcodec_send_packet(audioCodecContext, packet) == 0)
-        {
-            av_packet_free(&packet);
-            if (avcodec_receive_frame(audioCodecContext, frame) == 0)
-            {
-                int64_t out_nb_samples = av_rescale_rnd(
-                    swr_get_delay(swrContext, frame->sample_rate) + frame->nb_samples,
-                    44100,
-                    frame->sample_rate,
-                    AV_ROUND_UP);
-
-                // 将音频帧转换为 PCM 格式
-                // convertedSize：转换后音频数据的大小
-                int convertedSize = swr_convert(
-                    swrContext,                    // 转换工具?
-                    &convertedAudioBuffer,         // 输出
-                    out_nb_samples,                // 输出大小
-                    (const uint8_t **)frame->data, // 输入
-                    frame->nb_samples);            // 输入大小
-
-                if (convertedSize > 0)
-                {
-                    int bufferSize = av_samples_get_buffer_size(nullptr,
-                                                                frame->ch_layout.nb_channels,
-                                                                convertedSize,
-                                                                AV_SAMPLE_FMT_S16,
-                                                                1);
-                    double framePts = time_base_q2d * 1000 * frame->pts;
-                    // 将转换后的音频数据发送到音频播放器
-
-                    recvAudioData(convertedAudioBuffer, bufferSize, framePts);
-                }
-            }
-        }
-    }
-    av_frame_free(&frame);
-    emit audioDataUsed();
-}
-
-void AudioThread::recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts)
-{
-    // qDebug() << "-----------output start------";
-    memcpy(convertedAudioBuffer, audioBuffer, bufferSize);
-
     curPtsMs = pts;
     int curPtsSeconds = pts / 1000;
-    // 将curPtsSeconds转为时:分:秒的字符串
-    QString ptsTime = QTime::fromMSecsSinceStartOfDay(pts).toString("hh:mm:ss");
 
     while (audioOutput->bytesFree() < bufferSize)
         QThread::msleep(10);
@@ -129,15 +65,15 @@ void AudioThread::recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts
     if (curPtsSeconds != lastPtsSeconds)
     {
         lastPtsSeconds = curPtsSeconds;
-        emit audioClockChanged(curPtsSeconds, ptsTime);
+        emit audioClockChanged(curPtsSeconds);
     }
-    outputAudioFrame(convertedAudioBuffer, bufferSize);
+    outputAudioFrame(audioBuffer, bufferSize);
     // qDebug() << "-----------output over------";
 }
 
 void AudioThread::outputAudioFrame(uint8_t *audioBuffer, int bufferSize)
 {
-    outputDevice->write(reinterpret_cast<const char *>(convertedAudioBuffer),
+    outputDevice->write(reinterpret_cast<const char *>(audioBuffer),
                         bufferSize);
 }
 
@@ -150,10 +86,7 @@ void AudioThread::clean()
         audioOutput->deleteLater();
         audioOutput = nullptr;
 
-        audioCodecContext = nullptr;
-
-        sample_rate = -1;
-        nb_channels = -1;
+        bytes_per_sec = -1;
 
         lastPtsSeconds = 0;
         curPtsMs = 0;

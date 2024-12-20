@@ -16,23 +16,21 @@ signals:
     void audioDataUsed();
     void audioOutputReady();
 
-    void audioClockChanged(int pts_seconds, QString pts_str);
+    void audioClockChanged(int pts_seconds);
 
 public slots:
-    void recvAudioData(uint8_t *audioBuffer, int bufferSize, double pts);
-    void recvAudioPacket(AVPacket *packet);
-    void decodeAudioPacket();
-
     // 音频输出设备初始化
-    void onInitAudioThread(AVCodecContext *audioCodecContext, void *swrContext, double time_base_q2d);
+    void setAudioDecoder(AudioDecoder *audioDecoder);
     void onInitAudioOutput(int sampleRate, int channels);
+
+    void recvAudioPacket(AVPacket *packet);
+    void recvAudioBuffer(uint8_t *audioBuffer, int bufferSize, double pts);
 
     // 获取音频时钟(必须用Qt::DirectConnection连接)
     void onGetAudioClock(double &pts);
 
 private:
-    AVCodecContext *audioCodecContext{nullptr};
-    SwrContext *swrContext{nullptr}; // 音频重采样
+    AudioDecoder *audioDecoder{nullptr}; // 音频解码器
 
     QAudioOutput *audioOutput{nullptr}; // 音频输出
     QIODevice *outputDevice{nullptr};   // 音频输出设备
@@ -41,8 +39,8 @@ private:
 
     double time_base_q2d{0.0}; // 时间基准(秒)
 
-    int sample_rate = -1;
-    int nb_channels = -1;
+    // 参考FPS (帧数/秒), 此处为 比特数/秒, 采样率 * 通道数 * 每个样本字节数
+    int bytes_per_sec = -1;
 
     int lastPtsSeconds = 0;
     double curPtsMs = 0; // 当前包的时间戳(单位ms)
@@ -53,8 +51,6 @@ private:
     void outputAudioFrame(uint8_t *audioBuffer, int bufferSize);
 
     void clean();
-
-    void decodeAudioPackage();
 
 public:
     explicit AudioThread(QObject *parent = nullptr);

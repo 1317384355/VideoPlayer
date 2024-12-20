@@ -71,7 +71,7 @@ signals:
 
 private slots:
     // 响应音频进度条
-    void onAudioClockChanged(int pts_seconds, QString pts_str);
+    void onAudioClockChanged(int pts_seconds);
 
     // 响应拖动进度条, 当鼠标压下时暂停, 并保存播放状态
     void startSeek();

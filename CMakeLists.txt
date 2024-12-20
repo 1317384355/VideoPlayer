@@ -26,4 +26,4 @@ add_executable(${PROJECT_NAME}
     ${srcs} 
 ) 
 target_link_libraries(${PROJECT_NAME}  Qt5::Widgets Qt5::Core Qt5::Multimedia) # Qt5 Shared Library
-target_link_libraries(${PROJECT_NAME} -Wl,--start-group avcodec avformat avutil swresample -Wl,--end-group) # FFmpeg Shared Library
+target_link_libraries(${PROJECT_NAME} -Wl,--start-group avcodec avformat avutil swresample swscale -Wl,--end-group) # FFmpeg Shared Library

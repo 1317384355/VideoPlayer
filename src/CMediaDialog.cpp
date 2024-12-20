@@ -63,13 +63,13 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
         sliderWidget->setLayout(new QHBoxLayout(sliderWidget));
         sliderWidget->layout()->setContentsMargins(0, 0, 0, 0);
 
-        timeLabel = new QLabel("00:00:00", sliderWidget);
+        timeLabel = new QLabel("", sliderWidget);
         timeLabel->setStyleSheet("color: white;");
         sliderWidget->layout()->addWidget(timeLabel);
 
         slider = new CSlider(Qt::Horizontal, sliderWidget);
         // 滑块设置圆角
-        slider->setStyleSheet(R"(
+        slider->setStyleSheet({R"(
         background-color: transparent;
 
         QSlider::groove:horizontal {
@@ -91,12 +91,12 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
         }
         QSlider::add-page:horizontal {
             background: #c4c4c4; /* 滑块未走过的部分颜色 */
-        })");
+        })"});
         sliderWidget->layout()->addWidget(slider);
         slider->setValue(0);
         slider->setRange(0, 0);
 
-        totalTimeLabel = new QLabel("00:00:00", sliderWidget);
+        totalTimeLabel = new QLabel("", sliderWidget);
         totalTimeLabel->setStyleSheet("color: white;");
         sliderWidget->layout()->addWidget(totalTimeLabel);
 
@@ -117,23 +117,18 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     audioThread = new QThread();
     audio_th->moveToThread(audioThread);
     audioThread->start();
-    connect(decode_th, &Decode::initAudioThread, audio_th, &AudioThread::onInitAudioThread);
+    connect(decode_th, &Decode::setAudioDecoder, audio_th, &AudioThread::setAudioDecoder);
     connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput);
     connect(decode_th, &Decode::sendAudioPacket, audio_th, &AudioThread::recvAudioPacket);
-    connect(decode_th, &Decode::decodeAudioPacket, audio_th, &AudioThread::decodeAudioPacket);
-    connect(decode_th, &Decode::sendAudioData, audio_th, &AudioThread::recvAudioData);
     connect(audio_th, &AudioThread::audioOutputReady, this, &ControlWidget::startPlay);
     connect(audio_th, &AudioThread::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
-    connect(audio_th, &AudioThread::audioDataUsed, decode_th, &Decode::onAudioDataUsed, Qt::DirectConnection); // 必须直连
 
     video_th = new VideoThread();
     videoThread = new QThread();
     video_th->moveToThread(videoThread);
     videoThread->start();
-    connect(decode_th, &Decode::initVideoThread, video_th, &VideoThread::onInitVideoThread);
+    connect(decode_th, &Decode::setVideoDecoder, video_th, &VideoThread::setVideoDecoder);
     connect(decode_th, &Decode::sendVideoPacket, video_th, &VideoThread::recvVideoPacket);
-    connect(decode_th, &Decode::decodeVideoPacket, video_th, &VideoThread::decodeVideoPacket);
-    connect(video_th, &VideoThread::videoDataUsed, decode_th, &Decode::onVideoDataUsed, Qt::DirectConnection);     // 必须直连
     connect(video_th, &VideoThread::getAudioClock, audio_th, &AudioThread::onGetAudioClock, Qt::DirectConnection); // 必须直连
 
     // this->label->menu = new QMenu(this);
@@ -175,12 +170,21 @@ void ControlWidget::showVideo(const QString &path)
     int64_t duration_ms = decode_th->getDuration();
     int duration_s = static_cast<int>(duration_ms / 1000);
     slider->setRange(0, duration_s);
-    totalTimeLabel->setText(QString::asprintf("%02d:%02d:%02d", duration_s / 3600, duration_s / 60 % 60, duration_s % 60));
+    if (duration_s > 3600)
+        totalTimeLabel->setText(QString::asprintf("%02d:%02d:%02d", duration_s / 3600, duration_s / 60 % 60, duration_s % 60));
+    else
+        totalTimeLabel->setText(QString::asprintf("%02d:%02d", duration_s / 60 % 60, duration_s % 60));
     m_type = CONTL_TYPE::PLAY;
 }
-void ControlWidget::onAudioClockChanged(int pts_seconds, QString pts_str)
+void ControlWidget::onAudioClockChanged(int pts_seconds)
 {
     slider->setValue(pts_seconds);
+    QString pts_str;
+    if (pts_seconds > 3600)
+        pts_str = QString::asprintf("%02d:%02d:%02d", pts_seconds / 3600, pts_seconds / 60 % 60, pts_seconds % 60);
+    else
+        pts_str = QString::asprintf("%02d:%02d", pts_seconds / 60 % 60, pts_seconds % 60);
+
     timeLabel->setText(pts_str);
 }
 
@@ -201,8 +205,7 @@ void ControlWidget::changePlayState()
         break;
 
     case CONTL_TYPE::RESUME:
-        // video_th->resume();
-        // audio_th->resume();
+        decode_th->resume();
         m_type = CONTL_TYPE::PLAY;
         break;
 
