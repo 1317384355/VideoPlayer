@@ -103,9 +103,8 @@ void BaseOpenGLWidget::setPixelData(uint8_t *pixelData, int width, int height)
 {
     if (pixelData == nullptr)
         return;
-    else
-        delete[] dataPtr;
-    dataPtr = pixelData;
+
+    dataPtr.reset(pixelData);
     videoW = width;
     videoH = height;
     update();
@@ -131,8 +130,8 @@ void Nv12GLWidget::paintGL()
     glDisable(GL_DEPTH_TEST);                           // 关闭深度测试, 注释后内存占用增加
     glViewport(0, 0, width(), height());
 
-    loadTexture(this, GL_TEXTURE0, idY, videoW, videoH, GL_RED, dataPtr);
-    loadTexture(this, GL_TEXTURE1, idUV, videoW / 2, videoH / 2, GL_RG, dataPtr + videoW * videoH);
+    loadTexture(this, GL_TEXTURE0, idY, videoW, videoH, GL_RED, dataPtr.get());
+    loadTexture(this, GL_TEXTURE1, idUV, videoW / 2, videoH / 2, GL_RG, dataPtr.get() + videoW * videoH);
 
     glUniform1i(textureUniformY, 0);
     glUniform1i(textureUniformUV, 1);
@@ -168,9 +167,9 @@ void Yuv420GLWidget::paintGL()
     int halfW = videoW >> 1;
     int halfH = videoH >> 1;
 
-    loadTexture(this, GL_TEXTURE0, idY, videoW, videoH, GL_RED, dataPtr);
-    loadTexture(this, GL_TEXTURE1, idU, halfW, halfH, GL_RED, dataPtr + videoW * videoH);
-    loadTexture(this, GL_TEXTURE2, idV, halfW, halfH, GL_RED, dataPtr + halfW * halfH * 5);
+    loadTexture(this, GL_TEXTURE0, idY, videoW, videoH, GL_RED, dataPtr.get());
+    loadTexture(this, GL_TEXTURE1, idU, halfW, halfH, GL_RED, dataPtr.get() + videoW * videoH);
+    loadTexture(this, GL_TEXTURE2, idV, halfW, halfH, GL_RED, dataPtr.get() + halfW * halfH * 5);
 
     glUniform1i(textureUniformY, 0);
     glUniform1i(textureUniformU, 1);

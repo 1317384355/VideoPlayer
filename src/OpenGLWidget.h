@@ -10,6 +10,7 @@
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPixmap>
+#include <memory>
 
 class BaseOpenGLWidget : public QOpenGLWidget
 {
@@ -18,7 +19,7 @@ private:
     QOpenGLShaderProgram *program{nullptr};
 
 protected:
-    uint8_t *dataPtr{nullptr};
+    std::unique_ptr<uint8_t> dataPtr;
     int videoW, videoH;
 
     void initShader(const void *vertices, int count, const char *fsrc);

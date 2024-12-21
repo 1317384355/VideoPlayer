@@ -22,15 +22,13 @@ class AudioDecoder;
 class VideoDecoder;
 Q_DECLARE_METATYPE(AudioDecoder *);
 Q_DECLARE_METATYPE(VideoDecoder *);
+
 class Decode : public QObject
 {
     Q_OBJECT
 signals:
     void startPlay();
     void playOver();
-
-    void setAudioDecoder(AudioDecoder *audioDecoder);
-    void setVideoDecoder(VideoDecoder *videoDecoder);
 
     void initAudioOutput(int sampleRate, int channels);
     void initVideoOutput(int format);
@@ -84,12 +82,8 @@ private:
 
     int audioStreamIndex;
     int videoStreamIndex; // 视频流索引
-    int64_t curPts;
 
     const int *m_type; // 控制播放状态
-
-    bool isIniting = false;
-    bool isInitSuccess = false;
 
     // 初始化
     int initFFmpeg(const QString &filePath);
@@ -98,11 +92,14 @@ private:
     int initAudioDecoder();
     // 视频相关结构体初始化, 成功返回videoStreamIndex, 无视频流返回-1, 失败抛出FFMPEG_INIT_ERROR
     int initVideoDecoder();
+    // 硬解所需相关
+    void initHwdeviceCtx(const AVCodec *videoCodec, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx);
 
     // AVCodecContext *getCudaDecoder
     int initCodec(AVCodecContext **codecContext, int videoStreamIndex, const AVCodec *codec);
 
     void clean();
+    void clearPacketQueue();
 
     void debugError(FFMPEG_INIT_ERROR error);
 
@@ -117,6 +114,9 @@ public:
     void setVideoPath(const QString &filePath);
 
     bool resume();
+
+    AudioDecoder *getAudioDecoder() const { return audioDecoder; }
+    VideoDecoder *getVideoDecoder() const { return videoDecoder; }
 
     // 得到总音频帧数
     int64_t getAudioFrameCount() const;
@@ -144,7 +144,7 @@ private:
 
     int audioStreamIndex;
 
-    double time_base_q2d;
+    double time_base_q2d_ms;
 
     bool packetIsUsed = true;
 
@@ -169,12 +169,12 @@ private:
     SwsContext *swsContext{nullptr};
 
     AVBufferRef *hw_device_ctx = nullptr;
-    enum AVPixelFormat hw_device_pixel = AV_PIX_FMT_NONE;
+    enum AVPixelFormat hw_device_pix_fmt = AV_PIX_FMT_NONE;
     enum AVHWDeviceType hw_device_type = AV_HWDEVICE_TYPE_NONE;
 
     int videoStreamIndex; // 视频流索引
 
-    double time_base_q2d;
+    double time_base_q2d_ms;
 
     bool packetIsUsed = true;
 

@@ -17,7 +17,6 @@ signals:
 
     void getAudioClock(double &pts);
 public slots:
-    void setVideoDecoder(VideoDecoder *decoder);
 
     void recvVideoPacket(AVPacket *packet);
     void recvVideoFrame(uint8_t *data, int pixelWidth, int pixelHeight, double pts);
@@ -30,4 +29,6 @@ private:
 public:
     VideoThread(QObject *parent = nullptr);
     ~VideoThread();
+
+    void setVideoDecoder(VideoDecoder *decoder);
 };

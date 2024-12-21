@@ -114,20 +114,20 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     connect(decode_th, &Decode::playOver, this, &ControlWidget::terminatePlay);
 
     audio_th = new AudioThread();
+    audio_th->setAudioDecoder(decode_th->getAudioDecoder());
     audioThread = new QThread();
     audio_th->moveToThread(audioThread);
     audioThread->start();
-    connect(decode_th, &Decode::setAudioDecoder, audio_th, &AudioThread::setAudioDecoder);
     connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput);
     connect(decode_th, &Decode::sendAudioPacket, audio_th, &AudioThread::recvAudioPacket);
     connect(audio_th, &AudioThread::audioOutputReady, this, &ControlWidget::startPlay);
     connect(audio_th, &AudioThread::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
 
     video_th = new VideoThread();
+    video_th->setVideoDecoder(decode_th->getVideoDecoder());
     videoThread = new QThread();
     video_th->moveToThread(videoThread);
     videoThread->start();
-    connect(decode_th, &Decode::setVideoDecoder, video_th, &VideoThread::setVideoDecoder);
     connect(decode_th, &Decode::sendVideoPacket, video_th, &VideoThread::recvVideoPacket);
     connect(video_th, &VideoThread::getAudioClock, audio_th, &AudioThread::onGetAudioClock, Qt::DirectConnection); // 必须直连
 
@@ -144,8 +144,7 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     // });
 
     connect(slider, &CSlider::sliderClicked, this, &ControlWidget::startSeek);
-    // connect(slider, &VideoSlider::sliderMoved, video_th, &VideoThread::setCurFrame);
-    // connect(slider, &VideoSlider::sliderMoved, audio_th, &AudioThread::setCurFrame);
+    connect(slider, &CSlider::sliderMoved, decode_th, &Decode::setCurFrame);
     connect(slider, &CSlider::sliderReleased, this, &ControlWidget::endSeek);
 
     // connect(this, &CMediaDialog::startPlay, video_th, &VideoThread::startPlay);
@@ -167,6 +166,7 @@ void ControlWidget::showVideo(const QString &path)
         QThread::msleep(100);
     }
     decode_th->setVideoPath(path);
+
     int64_t duration_ms = decode_th->getDuration();
     int duration_s = static_cast<int>(duration_ms / 1000);
     slider->setRange(0, duration_s);
@@ -176,6 +176,7 @@ void ControlWidget::showVideo(const QString &path)
         totalTimeLabel->setText(QString::asprintf("%02d:%02d", duration_s / 60 % 60, duration_s % 60));
     m_type = CONTL_TYPE::PLAY;
 }
+
 void ControlWidget::onAudioClockChanged(int pts_seconds)
 {
     slider->setValue(pts_seconds);

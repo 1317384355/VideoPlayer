@@ -20,7 +20,6 @@ signals:
 
 public slots:
     // 音频输出设备初始化
-    void setAudioDecoder(AudioDecoder *audioDecoder);
     void onInitAudioOutput(int sampleRate, int channels);
 
     void recvAudioPacket(AVPacket *packet);
@@ -55,4 +54,6 @@ private:
 public:
     explicit AudioThread(QObject *parent = nullptr);
     ~AudioThread();
+
+    void setAudioDecoder(AudioDecoder *audioDecoder);
 };
