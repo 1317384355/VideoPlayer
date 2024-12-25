@@ -20,7 +20,12 @@ private:
 
 protected:
     std::unique_ptr<uint8_t> dataPtr;
-    int videoW, videoH;
+    GLsizei videoW, videoH;
+    float videoRatio = 1.0f;
+
+    GLint x, y;
+    GLsizei viewW, viewH;
+    float widgetRatio = 1.0f;
 
     void initShader(const void *vertices, int count, const char *fsrc);
 

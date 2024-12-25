@@ -163,7 +163,7 @@ void ControlWidget::showVideo(const QString &path)
     if (m_type != CONTL_TYPE::NONE)
     {
         terminatePlay();
-        QThread::msleep(100);
+        QThread::msleep(200);
     }
     decode_th->setVideoPath(path);
 

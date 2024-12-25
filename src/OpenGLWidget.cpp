@@ -105,6 +105,25 @@ void BaseOpenGLWidget::setPixelData(uint8_t *pixelData, int width, int height)
         return;
 
     dataPtr.reset(pixelData);
+
+    // 长宽比
+    videoRatio = (float)width / height;
+    widgetRatio = (float)this->width() / this->height();
+    if (widgetRatio > videoRatio)
+    {
+        viewW = this->height() * videoRatio;
+        viewH = this->height();
+        x = (this->width() - viewW) / 2;
+        y = 0;
+    }
+    else
+    {
+        viewW = this->width();
+        viewH = this->width() / videoRatio;
+        x = 0;
+        y = (this->height() - viewH) / 2;
+    }
+
     videoW = width;
     videoH = height;
     update();
@@ -126,9 +145,11 @@ void Nv12GLWidget::initializeGL()
 
 void Nv12GLWidget::paintGL()
 {
+    if (dataPtr == nullptr)
+        return;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 注释后画面卡死
     glDisable(GL_DEPTH_TEST);                           // 关闭深度测试, 注释后内存占用增加
-    glViewport(0, 0, width(), height());
+    glViewport(x, y, viewW, viewH);
 
     loadTexture(this, GL_TEXTURE0, idY, videoW, videoH, GL_RED, dataPtr.get());
     loadTexture(this, GL_TEXTURE1, idUV, videoW / 2, videoH / 2, GL_RG, dataPtr.get() + videoW * videoH);
@@ -160,9 +181,11 @@ void Yuv420GLWidget::initializeGL()
 
 void Yuv420GLWidget::paintGL()
 {
+    if (dataPtr == nullptr)
+        return;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 注释后画面卡死
     glDisable(GL_DEPTH_TEST);                           // 关闭深度测试, 注释后内存占用增加
-    glViewport(0, 0, width(), height());
+    glViewport(x, y, viewW, viewH);
 
     int halfW = videoW >> 1;
     int halfH = videoH >> 1;

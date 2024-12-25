@@ -81,7 +81,9 @@ private:
     FFMPEG_MEDIA_TYPE mediaType;
 
     int audioStreamIndex;
-    int videoStreamIndex; // 视频流索引
+    int videoStreamIndex;  // 视频流索引
+    int defaltStreamIndex; // 默认流索引
+    double defalt_time_base_q2d_ms;
 
     const int *m_type; // 控制播放状态
 
@@ -91,7 +93,7 @@ private:
     // 音频相关结构体初始化, 成功返回audioStreamIndex, 无音频流返回-1, 失败抛出FFMPEG_INIT_ERROR
     int initAudioDecoder();
     // 视频相关结构体初始化, 成功返回videoStreamIndex, 无视频流返回-1, 失败抛出FFMPEG_INIT_ERROR
-    int initVideoDecoder();
+    int initVideoDecoder(QList<AVHWDeviceType> &devices);
     // 硬解所需相关
     void initHwdeviceCtx(const AVCodec *videoCodec, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx);
 
@@ -105,6 +107,8 @@ private:
 
     static AVPixelFormat getHwFormat(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts);
 
+    void decodeAudio();
+    void decodeVideo();
     void decodeMultMedia();
 
 public:
@@ -166,7 +170,6 @@ signals:
 
 private:
     AVCodecContext *codecContext{nullptr};
-    SwsContext *swsContext{nullptr};
 
     AVBufferRef *hw_device_ctx = nullptr;
     enum AVPixelFormat hw_device_pix_fmt = AV_PIX_FMT_NONE;
@@ -186,8 +189,6 @@ private:
     uint8_t *copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
     uint8_t *copyYuv420pData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
 
-    void initSwsContext(AVPixelFormat srcFormat, AVPixelFormat dstFormat, int pixelWidth, int pixelHeight);
-
 public:
     VideoDecoder(QObject *parent = nullptr) : QObject(parent) {}
     ~VideoDecoder() = default;
@@ -198,5 +199,3 @@ public:
 
     int writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight, QString fileName);
 };
-
-// class DecodeVideo

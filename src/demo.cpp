@@ -27,14 +27,14 @@ demo::demo(QWidget *parent) : QWidget(parent)
 
     // 连接槽, 选择视频并播放
     connect(btnSelect, &QPushButton::clicked, [=]() { //
-        QString test_path = "E:/Anime/GIRLS BAND CRY/[Nekomoe kissaten][GIRLS BAND CRY][01][1080p][JPSC].mp4";
-        if (QFileInfo(test_path).isFile())
-        {
-            w->showVideo(test_path);
-            return;
-        }
+        // QString test_path = "E:/Anime/GIRLS BAND CRY/[Nekomoe kissaten][GIRLS BAND CRY][01][1080p][JPSC].mp4";
+        // if (QFileInfo(test_path).isFile())
+        // {
+        //     w->showVideo(test_path);
+        //     return;
+        // }
 
-        QString path = QFileDialog::getOpenFileName(this, "选择视频文件", "", "Video Files(*.mp4 *.avi *.mkv)");
+        QString path = QFileDialog::getOpenFileName(this, "选择视频文件", "", "Media Files(*.mp4 *.avi *.mkv *.mp3 *.wav);;All Files(*)");
         if (!path.isEmpty())
         {
             // 仅显示文件名, 并且去掉后缀
