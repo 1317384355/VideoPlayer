@@ -1,27 +1,29 @@
 #pragma once
 
-#include "playerCommand.h"
 #include <QAudioOutput>
 #include <QIODevice>
+#include <QDebug>
+#include <QMetaType>
+#include <QQueue>
+#include <QThread>
 
 extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
-#include <libavutil/imgutils.h>
 }
-
-#include <QDebug>
-#include <QThread>
-#include <QQueue>
-#include <QMetaType>
 
 class AudioDecoder;
 class VideoDecoder;
+
+#ifndef QMETATYPEID_DECODER
+#define QMETATYPEID_DECODER
 Q_DECLARE_METATYPE(AudioDecoder *);
 Q_DECLARE_METATYPE(VideoDecoder *);
+#endif
 
 class Decode : public QObject
 {
@@ -95,7 +97,7 @@ private:
     // 视频相关结构体初始化, 成功返回videoStreamIndex, 无视频流返回-1, 失败抛出FFMPEG_INIT_ERROR
     int initVideoDecoder(QList<AVHWDeviceType> &devices);
     // 硬解所需相关
-    void initHwdeviceCtx(const AVCodec *videoCodec, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx);
+    void initHwdeviceCtx(const AVCodec *videoCodec, int videoWidth, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx);
 
     // AVCodecContext *getCudaDecoder
     int initCodec(AVCodecContext **codecContext, int videoStreamIndex, const AVCodec *codec);
@@ -196,6 +198,7 @@ public:
     void decodeVideoPacket(AVPacket *packet);
 
     AVFrame *transFrameToRGB24(AVFrame *frame, int pixelWidth, int pixelHeight);
+    AVFrame *transFrameToDstFmt(AVFrame *srcFrame, int pixelWidth, int pixelHeight, AVPixelFormat dstFormat);
 
     int writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight, QString fileName);
 };

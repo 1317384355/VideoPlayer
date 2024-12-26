@@ -8,8 +8,8 @@
 #include <QPaintEvent>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QVBoxLayout>
 #include <QStackedLayout>
+#include <QVBoxLayout>
 
 CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
 {
@@ -27,7 +27,7 @@ CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
     stackedLayout->setStackingMode(QStackedLayout::StackAll);
     connect(controlWidget->decodethPtr(), &Decode::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
     connect(controlWidget->videothPtr(), &VideoThread::sendFrame, frameWidget, &FrameWidget::receviceFrame);
-    // connect(controlWidget, &ControlWidget::fullScreenRequest, this, &CMediaDialog::onFullScreenRequest);
+    // connect(controlWidget, &ControlWidget::fullScreenRequest, this, &CMediaDialog::onFullScreenRequest); // 全屏有bug，暂时不使用
 }
 
 void CMediaDialog::onFullScreenRequest()
@@ -118,9 +118,8 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     audioThread = new QThread();
     audio_th->moveToThread(audioThread);
     audioThread->start();
-    connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput);
+    connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput, Qt::DirectConnection);
     connect(decode_th, &Decode::sendAudioPacket, audio_th, &AudioThread::recvAudioPacket);
-    connect(audio_th, &AudioThread::audioOutputReady, this, &ControlWidget::startPlay);
     connect(audio_th, &AudioThread::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
 
     video_th = new VideoThread();
@@ -147,8 +146,6 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     connect(slider, &CSlider::sliderMoved, decode_th, &Decode::setCurFrame);
     connect(slider, &CSlider::sliderReleased, this, &ControlWidget::endSeek);
 
-    // connect(this, &CMediaDialog::startPlay, video_th, &VideoThread::startPlay);
-    // connect(this, &CMediaDialog::startPlay, audio_th, &AudioThread::startPlay);
     // connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
 }
 
@@ -163,7 +160,11 @@ void ControlWidget::showVideo(const QString &path)
     if (m_type != CONTL_TYPE::NONE)
     {
         terminatePlay();
-        QThread::msleep(200);
+        slider->setValue(0);
+        timeLabel->setText("00:00");
+        totalTimeLabel->setText("00:00");
+        qApp->processEvents(); // 强制更新UI
+        QThread::msleep(100);
     }
     decode_th->setVideoPath(path);
 
@@ -175,6 +176,7 @@ void ControlWidget::showVideo(const QString &path)
     else
         totalTimeLabel->setText(QString::asprintf("%02d:%02d", duration_s / 60 % 60, duration_s % 60));
     m_type = CONTL_TYPE::PLAY;
+    emit ControlWidget::startPlay();
 }
 
 void ControlWidget::onAudioClockChanged(int pts_seconds)
@@ -231,6 +233,7 @@ void ControlWidget::endSeek()
 
 void ControlWidget::terminatePlay()
 {
+    qDebug() << "terminatePlay" << QDateTime::currentMSecsSinceEpoch();
     m_type = CONTL_TYPE::END;
 }
 
@@ -266,7 +269,7 @@ void CSlider::mousePressEvent(QMouseEvent *event)
         // 获取鼠标的位置，这里并不能直接从ev中取值（因为如果是拖动的话，鼠标开始点击的位置没有意义了）
         double pos = event->pos().x() / (double)width();
         setValue(pos * (maximum() - minimum()) + minimum());
-        qDebug() << "setValue: " << this->value();
+        // qDebug() << "setValue: " << this->value();
         emit CSlider::sliderClicked();
     }
 }
@@ -294,7 +297,7 @@ void CSlider::mouseReleaseEvent(QMouseEvent *event)
     {
         this->isPress = false;
         emit CSlider::sliderMoved(this->value());
-        qDebug() << "slider_value: " << this->value();
+        // qDebug() << "slider_value: " << this->value();
 
         QSlider::mouseReleaseEvent(event);
         emit CSlider::sliderReleased();

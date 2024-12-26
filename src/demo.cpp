@@ -1,9 +1,11 @@
 #include "demo.h"
+#include "CMediaDialog.h"
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QStandardPaths>
 
 demo::demo(QWidget *parent) : QWidget(parent)
 {
@@ -34,7 +36,9 @@ demo::demo(QWidget *parent) : QWidget(parent)
         //     return;
         // }
 
-        QString path = QFileDialog::getOpenFileName(this, "选择视频文件", "", "Media Files(*.mp4 *.avi *.mkv *.mp3 *.wav);;All Files(*)");
+        QString path = QFileDialog::getOpenFileName(this, "选择视频文件",
+                                                    QStandardPaths::writableLocation(QStandardPaths::StandardLocation::MoviesLocation),
+                                                    "Media Files(*.mp4 *.avi *.mkv *.mp3 *.wav);;All Files(*)");
         if (!path.isEmpty())
         {
             // 仅显示文件名, 并且去掉后缀

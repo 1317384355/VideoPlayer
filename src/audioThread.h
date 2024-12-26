@@ -1,20 +1,19 @@
 #pragma once
 
+#include "decode.h"
 #include <QAudioOutput>
 #include <QDebug>
 #include <QIODevice>
-#include <QThread>
 #include <QQueue>
-#include "decode.h"
+#include <QThread>
 
-#include "playerCommand.h"
+// #include "playerCommand.h"
 
 class AudioThread : public QObject
 {
     Q_OBJECT
 signals:
     void audioDataUsed();
-    void audioOutputReady();
 
     void audioClockChanged(int pts_seconds);
 

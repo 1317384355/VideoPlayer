@@ -1,5 +1,5 @@
 #pragma once
-#include "CMediaDialog.h"
+#include <QWidget>
 
 class demo : public QWidget
 {

@@ -1,6 +1,6 @@
 #pragma once
-#include "playerCommand.h"
 #include "decode.h"
+// #include "playerCommand.h"
 #include <QObject>
 #include <QQueue>
 

@@ -1,14 +1,16 @@
 #include "decode.h"
+#include "playerCommand.h"
 #include <QImage>
 #include <QPixmap>
+
 #define MAX_AUDIO_FRAME_SIZE 192000
 QString av_get_pixelformat_name(AVPixelFormat format);
 
 Decode::Decode(const int *_type, QObject *parent)
-    : m_type(_type),
-      QObject(parent),
+    : QObject(parent),
       formatContext(nullptr),
-      mediaType(UNKNOWN)
+      mediaType(UNKNOWN),
+      m_type(_type)
 {
     avformat_network_init(); // Initialize FFmpeg network components
     audioDecoder = new AudioDecoder(this);
@@ -69,8 +71,8 @@ int64_t Decode::getDuration() const
         return -1;
 
     // 流的总时长 ms
-    int64_t ret = (formatContext->duration / (int64_t)(AV_TIME_BASE / 1000));
-    qDebug() << "duration: " << ret / 1000 / 3600 << ":" << ret / 1000 / 60 << ":" << ret / 1000 % 60;
+    int64_t ret = (formatContext->duration / ((int64_t)AV_TIME_BASE / 1000));
+    qDebug() << "duration: " << QString::asprintf("%02d:%02d:%02d", ret / 1000 / 3600, ret / 1000 / 60 % 60, ret / 1000 % 60);
     return ret;
 }
 
@@ -142,15 +144,15 @@ int Decode::initFFmpeg(const QString &filePath)
             throw FIND_STREAM_ERROR;
         }
 
-        defaltStreamIndex = (videoStreamIndex == -1) ? audioStreamIndex : videoStreamIndex;
-        defalt_time_base_q2d_ms = (videoStreamIndex == -1) ? audioDecoder->time_base_q2d_ms : videoDecoder->time_base_q2d_ms;
-
         if (audioStreamIndex == -1)
             mediaType = ONLY_VIDEO;
-        else if (videoStreamIndex == -1)
+        else if (videoStreamIndex == -1 || formatContext->streams[audioStreamIndex]->codecpar->codec_id == AV_CODEC_ID_MP3)
             mediaType = ONLY_AUDIO;
         else
             mediaType = MULTI_AUDIO_VIDEO;
+
+        defaltStreamIndex = (mediaType == ONLY_AUDIO) ? audioStreamIndex : videoStreamIndex;
+        defalt_time_base_q2d_ms = (mediaType == ONLY_AUDIO) ? audioDecoder->time_base_q2d_ms : videoDecoder->time_base_q2d_ms;
     }
     catch (FFMPEG_INIT_ERROR error)
     {
@@ -182,9 +184,8 @@ int Decode::initAudioDecoder()
 
     // Initialize resampler context
     // 错误时, SwrContext 将被释放 并且 *ps(即传入的swrContext) 被置为空
-    AVChannelLayout ac_ch_ly = AV_CHANNEL_LAYOUT_STEREO;
     if (0 != swr_alloc_set_opts2(&swrContext,
-                                 &ac_ch_ly, AV_SAMPLE_FMT_S16,
+                                 &audioCodecContext->ch_layout, AV_SAMPLE_FMT_S16,
                                  audioCodecContext->sample_rate,
                                  &audioCodecContext->ch_layout,
                                  audioCodecContext->sample_fmt,
@@ -223,7 +224,7 @@ int Decode::initVideoDecoder(QList<AVHWDeviceType> &devices)
     const AVCodec *videoCodec = nullptr;
     // 找到指定流类型的流信息，并且初始化codec(如果codec没有值)，返回流索引
     videoStreamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &videoCodec, 0);
-    if (videoStreamIndex == AVERROR_STREAM_NOT_FOUND || (AV_CODEC_ID_H264 != videoCodec->id && AV_CODEC_ID_HEVC != videoCodec->id))
+    if (videoStreamIndex == AVERROR_STREAM_NOT_FOUND)
         return -1;
     else if (videoStreamIndex == AVERROR_DECODER_NOT_FOUND)
         throw FIND_VIDEO_DECODER_ERROR;
@@ -231,7 +232,7 @@ int Decode::initVideoDecoder(QList<AVHWDeviceType> &devices)
     // 根据解码器获取支持此解码方式的硬件加速计
     // 所有支持的硬件解码器保存在AVCodec的hw_configs变量中。对于硬件编码器来说又是单独的AVCodec
     if (!devices.isEmpty())
-        initHwdeviceCtx(videoCodec, devices, hw_device_pix_fmt, hw_device_type, &hw_device_ctx);
+        initHwdeviceCtx(videoCodec, formatContext->streams[videoStreamIndex]->codecpar->width, devices, hw_device_pix_fmt, hw_device_type, &hw_device_ctx);
 
     if (initCodec(&videoCodecContext, videoStreamIndex, videoCodec) < 0)
         throw INIT_VIDEO_CODEC_CONTEXT_ERROR;
@@ -249,7 +250,7 @@ int Decode::initVideoDecoder(QList<AVHWDeviceType> &devices)
     return videoStreamIndex;
 }
 
-void Decode::initHwdeviceCtx(const AVCodec *videoCodec, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx)
+void Decode::initHwdeviceCtx(const AVCodec *videoCodec, int videoWidth, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx)
 {
     const AVCodecHWConfig *config = nullptr; // 硬解码器
     for (int i = 0;; i++)
@@ -259,12 +260,17 @@ void Decode::initHwdeviceCtx(const AVCodec *videoCodec, QList<AVHWDeviceType> &d
             break;
 
         // 可能一个解码器对应着多个硬件加速方式，所以这里将其挑选出来
-        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-            devices.contains(config->device_type) &&
-            config->pix_fmt != AV_PIX_FMT_NONE)
+        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && devices.contains(config->device_type) && config->pix_fmt != AV_PIX_FMT_NONE)
         {
             qDebug() << "config->pix_fmt: " << av_get_pixelformat_name(config->pix_fmt);
             qDebug() << "config->device_type: " << av_hwdevice_get_type_name(config->device_type);
+
+            if (config->pix_fmt == AV_PIX_FMT_CUDA && videoWidth > 2032)
+            { // cuda硬解暂时不支持4k, 有bug不会处理,待后续学习
+                qDebug() << "CUDA only support width <= 2032";
+                continue;
+            }
+
             if (av_hwdevice_ctx_create(hw_device_ctx, config->device_type, nullptr, nullptr, 0) < 0)
             {
                 devices.removeOne(config->device_type);
@@ -277,7 +283,9 @@ void Decode::initHwdeviceCtx(const AVCodec *videoCodec, QList<AVHWDeviceType> &d
             }
         }
         else
+        {
             qDebug() << "unuseful config->device_type: " << av_hwdevice_get_type_name(config->device_type);
+        }
     }
 }
 
@@ -289,9 +297,7 @@ int Decode::initCodec(AVCodecContext **codecContext, int streamIndex, const AVCo
     avcodec_parameters_to_context(*codecContext, stream->codecpar);
 
     // 如果是视频流，并且支持硬件加速，则设置硬件加速
-    if (formatContext->streams[streamIndex]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-        videoDecoder->hw_device_type != AV_HWDEVICE_TYPE_NONE &&
-        videoDecoder->hw_device_ctx != nullptr)
+    if (formatContext->streams[streamIndex]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoDecoder->hw_device_type != AV_HWDEVICE_TYPE_NONE && videoDecoder->hw_device_ctx != nullptr)
     {
         (*codecContext)->opaque = &this->videoDecoder->hw_device_pix_fmt;
         (*codecContext)->get_format = getHwFormat;
@@ -554,9 +560,13 @@ void VideoDecoder::decodeVideoPacket(AVPacket *packet)
                 pixelData = copyNv12Data(frame->data, frame->linesize, frame->width, frame->height);
                 break;
             default:
-                // auto _frame = transFrameToRGB24(frame, frame->width, frame->height);
-                qDebug() << "in video unknow stream format: " << frame->format;
+            {
+                auto dstFrame = transFrameToDstFmt(frame, frame->width, frame->height, AV_PIX_FMT_YUV420P);
+                pixelData = copyYuv420pData(dstFrame->data, dstFrame->linesize, dstFrame->width, dstFrame->height);
+                av_frame_free(&dstFrame);
+                // qDebug() << "in video unknow stream format: " << frame->format;
                 break;
+            }
             }
 
             emit sendVideoFrame(pixelData, frame->width, frame->height, framePts);
@@ -586,7 +596,15 @@ void VideoDecoder::transferDataFromHW(AVFrame **frame)
         return;
     }
     av_frame_free(frame);
-    *frame = tmp_frame;
+    if (tmp_frame->format != AV_PIX_FMT_NV12)
+    { // 如果不是NV12格式, 则转换为NV12格式, 临时结构, 后续再重新梳理
+        *frame = transFrameToDstFmt(tmp_frame, tmp_frame->width, tmp_frame->height, AV_PIX_FMT_NV12);
+        av_frame_free(&tmp_frame);
+    }
+    else
+    {
+        *frame = tmp_frame;
+    }
 }
 
 uint8_t *VideoDecoder::copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight)
@@ -630,24 +648,43 @@ uint8_t *VideoDecoder::copyYuv420pData(uint8_t **pixelData, int *linesize, int p
     return pixel;
 }
 
-AVFrame *VideoDecoder::transFrameToRGB24(AVFrame *frame, int pixelWidth, int pixelHeight)
+AVFrame *VideoDecoder::transFrameToRGB24(AVFrame *srcFrame, int pixelWidth, int pixelHeight)
 {
     AVFrame *frameRGB = av_frame_alloc();
-    if (frame->format == AV_PIX_FMT_RGB24)
+    if (srcFrame->format == AV_PIX_FMT_RGB24)
     {
-        av_frame_copy(frameRGB, frame);
+        av_frame_copy(frameRGB, srcFrame);
     }
     else
     {
-        auto swsContext = sws_getContext(pixelWidth, pixelHeight, (AVPixelFormat)frame->format, pixelWidth, pixelHeight, AV_PIX_FMT_RGB24,
-                                         SWS_BICUBIC, nullptr, nullptr, nullptr);
+        auto swsContext = sws_getContext(pixelWidth, pixelHeight, (AVPixelFormat)srcFrame->format, pixelWidth, pixelHeight, AV_PIX_FMT_RGB24, SWS_BICUBIC, nullptr, nullptr, nullptr);
 
         av_image_alloc(frameRGB->data, frameRGB->linesize, pixelWidth, pixelHeight, AV_PIX_FMT_RGB24, 1);
-        sws_scale(swsContext, frame->data, frame->linesize, 0, pixelHeight, frameRGB->data, frameRGB->linesize);
+        sws_scale(swsContext, srcFrame->data, srcFrame->linesize, 0, pixelHeight, frameRGB->data, frameRGB->linesize);
 
         sws_freeContext(swsContext);
     }
     return frameRGB;
+}
+
+AVFrame *VideoDecoder::transFrameToDstFmt(AVFrame *srcFrame, int pixelWidth, int pixelHeight, AVPixelFormat dstFormat)
+{
+    AVFrame *dstFrame = av_frame_alloc();
+    SwsContext *swsContext = sws_getContext(pixelWidth, pixelHeight, AVPixelFormat(srcFrame->format),
+                                            pixelWidth, pixelHeight, dstFormat,
+                                            SWS_BILINEAR, NULL, NULL, NULL);
+
+    int numBytes = av_image_get_buffer_size(dstFormat, pixelWidth, pixelHeight, 1);
+    uint8_t *buffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
+
+    av_image_fill_arrays(dstFrame->data, dstFrame->linesize, buffer, dstFormat, pixelWidth, pixelHeight, 1);
+
+    sws_scale(swsContext, srcFrame->data, srcFrame->linesize, 0, pixelHeight, dstFrame->data, dstFrame->linesize);
+
+    dstFrame->format = dstFormat;
+    dstFrame->width = pixelWidth;
+    dstFrame->height = pixelHeight;
+    return dstFrame;
 }
 
 int VideoDecoder::writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight, QString fileName)

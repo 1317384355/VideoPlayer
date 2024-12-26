@@ -5,8 +5,8 @@
 class CTimer
 {
 public:
-    CTimer() {};
-    ~CTimer() {};
+    CTimer(){}
+    ~CTimer(){}
 
     int64_t getAudioTimeGap()
     {

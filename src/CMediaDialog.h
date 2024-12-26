@@ -2,15 +2,16 @@
 
 #include "AudioThread.h"
 #include "Decode.h"
-#include "VideoThread.h"
 #include "OpenGLWidget.h"
+#include "VideoThread.h"
+#include "playerCommand.h"
 #include <QApplication>
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPushButton>
 #include <QSlider>
 #include <QWidget>
-#include <QPushButton>
 
 // 画面窗口
 class FrameWidget : public QWidget

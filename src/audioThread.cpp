@@ -33,7 +33,6 @@ void AudioThread::onInitAudioOutput(int sampleRate, int channels)
 
     audioOutput = new QAudioOutput(format);
     outputDevice = audioOutput->start();
-    emit audioOutputReady();
 }
 
 void AudioThread::onGetAudioClock(double &pts)

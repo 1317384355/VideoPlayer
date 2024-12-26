@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <QOpenGLBuffer>
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
@@ -10,7 +11,6 @@
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPixmap>
-#include <memory>
 
 class BaseOpenGLWidget : public QOpenGLWidget
 {

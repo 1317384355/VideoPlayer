@@ -3,49 +3,49 @@
 #define VERTEXIN 0
 #define TEXTUREIN 1
 
-const char *vsrc =
-    "attribute vec4 vertexIn; \n"
-    "attribute vec2 textureIn; \n"
-    "varying vec2 textureOut;  \n"
-    "void main(void)           \n"
-    "{                         \n"
-    "    gl_Position = vertexIn; \n"
-    "    textureOut = textureIn; \n"
-    "}\n";
+const char *vsrc = {R"(
+    attribute vec4 vertexIn; 
+    attribute vec2 textureIn; 
+    varying vec2 textureOut;  
+    void main(void)           
+    {                         
+        gl_Position = vertexIn; 
+        textureOut = textureIn; 
+    })"};
 
-const char *nv12_fsrc =
-    "varying vec2 textureOut;\n"
-    "uniform sampler2D textureY;\n"
-    "uniform sampler2D textureUV;\n"
-    "void main(void)\n"
-    "{\n"
-    "    vec3 yuv; \n"
-    "    vec3 rgb; \n"
-    "    yuv.x = texture2D(textureY, textureOut.st).r - 0.0625; \n"
-    "    yuv.y = texture2D(textureUV, textureOut.st).r - 0.5; \n"
-    "    yuv.z = texture2D(textureUV, textureOut.st).g - 0.5; \n"
-    "    rgb = mat3( 1,       1,         1,         \n"
-    "                0,       -0.39465,  2.03211,   \n"
-    "                1.13983, -0.58060,  0) * yuv;  \n"
-    "    gl_FragColor = vec4(rgb, 1); \n"
-    "}\n";
-const char *yuv420_fsrc =
-    "varying vec2 textureOut; \n"
-    "uniform sampler2D textureY; \n"
-    "uniform sampler2D textureU; \n"
-    "uniform sampler2D textureV; \n"
-    "void main(void) \n"
-    "{ \n"
-    "    vec3 yuv; \n"
-    "    vec3 rgb; \n"
-    "    yuv.x = texture2D(textureY, textureOut).r; \n"
-    "    yuv.y = texture2D(textureU, textureOut).r - 0.5; \n"
-    "    yuv.z = texture2D(textureV, textureOut).r - 0.5; \n"
-    "    rgb = mat3( 1,       1,         1, \n"
-    "                0,       -0.39465,  2.03211, \n"
-    "                1.13983, -0.58060,  0) * yuv; \n"
-    "    gl_FragColor = vec4(rgb, 1); \n"
-    "  }\n";
+const char *nv12_fsrc = {R"(
+    varying vec2 textureOut;
+    uniform sampler2D textureY;
+    uniform sampler2D textureUV;
+    void main(void)
+    {
+        vec3 yuv; 
+        vec3 rgb; 
+        yuv.x = texture2D(textureY, textureOut.st).r - 0.0625; 
+        yuv.y = texture2D(textureUV, textureOut.st).r - 0.5; 
+        yuv.z = texture2D(textureUV, textureOut.st).g - 0.5; 
+        rgb = mat3( 1,       1,         1,         
+                    0,       -0.39465,  2.03211,   
+                    1.13983, -0.58060,  0) * yuv;  
+        gl_FragColor = vec4(rgb, 1); 
+    })"};
+const char *yuv420_fsrc = {R"(
+    varying vec2 textureOut; 
+    uniform sampler2D textureY; 
+    uniform sampler2D textureU; 
+    uniform sampler2D textureV; 
+    void main(void) 
+    { 
+        vec3 yuv; 
+        vec3 rgb; 
+        yuv.x = texture2D(textureY, textureOut).r; 
+        yuv.y = texture2D(textureU, textureOut).r - 0.5; 
+        yuv.z = texture2D(textureV, textureOut).r - 0.5; 
+        rgb = mat3( 1,       1,         1, 
+                    0,       -0.39465,  2.03211, 
+                    1.13983, -0.58060,  0) * yuv; 
+        gl_FragColor = vec4(rgb, 1); 
+    })"};
 
 static const GLfloat yuv420_vertices[]{
     // 顶点坐标
