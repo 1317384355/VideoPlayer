@@ -28,7 +28,7 @@ private:
 
 public:
     explicit FrameWidget(QWidget *parent = nullptr);
-    ~FrameWidget() {}
+    ~FrameWidget() = default;
 
     // const COpenGLWidget *glWidgetPtr() { return glWidget; }
 };
@@ -129,7 +129,7 @@ private:
 
 public:
     CMediaDialog(QWidget *parent = nullptr);
-    ~CMediaDialog() {}
+    ~CMediaDialog() = default;
 
     void showVideo(const QString &path) { controlWidget->showVideo(path); }
 };

@@ -37,14 +37,14 @@ void CMediaDialog::onFullScreenRequest()
     {
         if (this->parentWidget())
             this->parentWidget()->show();
-        setWindowFlags(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint);
+        // setWindowFlags(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint);
         showNormal();
     }
     else
     { // // 窗口全屏化
         if (this->parentWidget())
             this->parentWidget()->hide();
-        setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+        // setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
         showFullScreen();
     }
 }
@@ -152,7 +152,24 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
 ControlWidget::~ControlWidget()
 {
     terminatePlay();
-    this->disconnect();
+
+    decode_th->deleteLater();
+    audio_th->deleteLater();
+    video_th->deleteLater();
+
+    decodeThread->quit();
+    decodeThread->wait();
+    decodeThread->deleteLater();
+
+    audioThread->quit();
+    audioThread->wait();
+    audioThread->deleteLater();
+
+    videoThread->quit();
+    videoThread->wait();
+    videoThread->deleteLater();
+
+    qDebug() << "ControlWidget::~ControlWidget()";
 }
 
 void ControlWidget::showVideo(const QString &path)
