@@ -326,6 +326,9 @@ void Decode::clean()
 
 void Decode::clearPacketQueue()
 {
+    if (videoDecoder && videoDecoder->codecContext)
+        avcodec_flush_buffers(videoDecoder->codecContext);
+
     audioDecoder->packetIsUsed = true;
     videoDecoder->packetIsUsed = true;
     while (!audioPacketQueue.isEmpty())
