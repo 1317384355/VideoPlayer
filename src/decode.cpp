@@ -543,7 +543,8 @@ void VideoDecoder::decodeVideoPacket(AVPacket *packet)
     {
         av_packet_free(&packet);
         auto frame = av_frame_alloc();
-        if (avcodec_receive_frame(codecContext, frame) == 0)
+        int ret = avcodec_receive_frame(codecContext, frame);
+        if (ret == 0)
         {
             double framePts = time_base_q2d_ms * frame->pts;
 
@@ -572,9 +573,9 @@ void VideoDecoder::decodeVideoPacket(AVPacket *packet)
             emit sendVideoFrame(pixelData, frame->width, frame->height, framePts);
             av_frame_free(&frame);
         }
-        else
+        else if (ret != AVERROR(EAGAIN))
         {
-            qDebug() << "avcodec_receive_frame fail";
+            qDebug() << "avcodec_receive_frame fail: " << ret;
         }
     }
     else

@@ -103,7 +103,9 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
         btn = new QPushButton("test", sliderWidget);
         btn->setStyleSheet("background-color: white;");
         sliderWidget->layout()->addWidget(btn);
-        connect(btn, &QPushButton::clicked, this, &ControlWidget::terminatePlay);
+        connect(btn, &QPushButton::clicked, [&]() { //
+            this->m_type = CONTL_TYPE::END;
+        });
     }
 
     decode_th = new Decode(&m_type);
@@ -111,7 +113,7 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     decode_th->moveToThread(decodeThread);
     decodeThread->start();
     connect(this, &ControlWidget::startPlay, decode_th, &Decode::decodePacket);
-    connect(decode_th, &Decode::playOver, this, &ControlWidget::terminatePlay);
+    connect(decode_th, &Decode::playOver, this, &ControlWidget::onPlayOver);
 
     audio_th = new AudioThread();
     audio_th->setAudioDecoder(decode_th->getAudioDecoder());
@@ -196,6 +198,12 @@ void ControlWidget::showVideo(const QString &path)
     emit ControlWidget::startPlay();
 }
 
+void ControlWidget::resumeUI()
+{
+    slider->setValue(0);
+    timeLabel->setText("00:00");
+}
+
 void ControlWidget::onAudioClockChanged(int pts_seconds)
 {
     slider->setValue(pts_seconds);
@@ -213,6 +221,7 @@ void ControlWidget::changePlayState()
     switch (m_type)
     {
     case CONTL_TYPE::END:
+        resumeUI();
         m_type = CONTL_TYPE::RESUME;
         break;
 
@@ -224,6 +233,7 @@ void ControlWidget::changePlayState()
         m_type = CONTL_TYPE::PLAY;
         break;
 
+    case CONTL_TYPE::STOP:
     case CONTL_TYPE::RESUME:
         decode_th->resume();
         m_type = CONTL_TYPE::PLAY;
@@ -250,8 +260,14 @@ void ControlWidget::endSeek()
 
 void ControlWidget::terminatePlay()
 {
-    qDebug() << "terminatePlay" << QDateTime::currentMSecsSinceEpoch();
+    m_type = CONTL_TYPE::STOP;
+}
+
+void ControlWidget::onPlayOver()
+{
     m_type = CONTL_TYPE::END;
+    slider->setValue(slider->maximum());
+    timeLabel->setText(totalTimeLabel->text());
 }
 
 void ControlWidget::mousePressEvent(QMouseEvent *event)

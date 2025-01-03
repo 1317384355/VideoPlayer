@@ -83,6 +83,8 @@ private slots:
     // 强制关闭
     void terminatePlay();
 
+    void onPlayOver(); // 播放结束
+
 private:
     QWidget *sliderWidget{nullptr};
     CSlider *slider{nullptr};
@@ -113,6 +115,7 @@ public:
     const Decode *decodethPtr() { return decode_th; }
     const VideoThread *videothPtr() { return video_th; }
     void showVideo(const QString &path);
+    void resumeUI();
     void changePlayState();
 };
 

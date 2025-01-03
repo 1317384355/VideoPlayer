@@ -5,8 +5,8 @@
 class CTimer
 {
 public:
-    CTimer(){}
-    ~CTimer(){}
+    CTimer() {}
+    ~CTimer() {}
 
     int64_t getAudioTimeGap()
     {
@@ -35,6 +35,7 @@ enum CONTL_TYPE
     NONE,
     PLAY,
     PAUSE,
+    STOP,
     RESUME,
     END,
 };
@@ -49,6 +50,9 @@ inline void debugPlayerCommand(CONTL_TYPE type)
         break;
     case PAUSE:
         str = "PAUSE";
+        break;
+    case STOP:
+        str = "STOP";
         break;
     case RESUME:
         str = "RESUME";
