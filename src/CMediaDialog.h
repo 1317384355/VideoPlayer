@@ -1,9 +1,8 @@
 #pragma once
-
-#include "AudioThread.h"
+#include "AudioRenderer.h"
 #include "Decode.h"
 #include "OpenGLWidget.h"
-#include "VideoThread.h"
+#include "VideoWaiter.h"
 #include "playerCommand.h"
 #include <QApplication>
 #include <QLabel>
@@ -55,6 +54,7 @@ protected:
 public:
     CSlider(Qt::Orientation orientation, QWidget *parent = nullptr) : QSlider(orientation, parent) {}
 
+    void moveToValue(int value);
     void setRange(int min, int max);
     bool getIsPress() const { return this->isPress; }
 };
@@ -93,9 +93,9 @@ private:
     QPushButton *btn{nullptr}; // 测试用
     QMenu *menu{nullptr};
 
-    Decode *decode_th{nullptr};
-    VideoThread *video_th{nullptr};
-    AudioThread *audio_th{nullptr};
+    Decoder *decode_th{nullptr};
+    VideoWaiter *video_th{nullptr};
+    AudioRenderer *audio_th{nullptr};
     QThread *decodeThread{nullptr};
     QThread *videoThread{nullptr};
     QThread *audioThread{nullptr};
@@ -107,13 +107,16 @@ private:
 protected:
     virtual void mousePressEvent(QMouseEvent *event) override;
     // virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
+    // 键盘事件
+    virtual void keyPressEvent(QKeyEvent *event) override;
+    virtual bool eventFilter(QObject *obj, QEvent *event) override;
 
 public:
     ControlWidget(QWidget *parent = nullptr);
     ~ControlWidget();
 
-    const Decode *decodethPtr() { return decode_th; }
-    const VideoThread *videothPtr() { return video_th; }
+    const Decoder *decodethPtr() { return decode_th; }
+    const VideoWaiter *videothPtr() { return video_th; }
     void showVideo(const QString &path);
     void resumeUI();
     void changePlayState();

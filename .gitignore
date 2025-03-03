@@ -3,5 +3,6 @@ qrc/
 build/
 *.txt
 !CMakeLists.txt
+demo.pro.user
 demo.pro.user.*
 *.exe

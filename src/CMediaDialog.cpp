@@ -1,5 +1,4 @@
 #include "CMediaDialog.h"
-#include "AudioThread.h"
 #include <QApplication>
 #include <QFileDialog>
 #include <QHBoxLayout>
@@ -25,8 +24,8 @@ CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
 
     stackedLayout->setCurrentIndex(1);
     stackedLayout->setStackingMode(QStackedLayout::StackAll);
-    connect(controlWidget->decodethPtr(), &Decode::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
-    connect(controlWidget->videothPtr(), &VideoThread::sendFrame, frameWidget, &FrameWidget::receviceFrame);
+    connect(controlWidget->decodethPtr(), &Decoder::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
+    connect(controlWidget->videothPtr(), &VideoWaiter::sendFrame, frameWidget, &FrameWidget::receviceFrame);
     // connect(controlWidget, &ControlWidget::fullScreenRequest, this, &CMediaDialog::onFullScreenRequest); // 全屏有bug，暂时不使用
 }
 
@@ -51,6 +50,7 @@ void CMediaDialog::onFullScreenRequest()
 
 ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
 {
+    QApplication::instance()->installEventFilter(this);
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     this->setLayout(layout);
@@ -108,29 +108,28 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
         });
     }
 
-    decode_th = new Decode(&m_type);
+    decode_th = new Decoder(&m_type);
     decodeThread = new QThread();
     decode_th->moveToThread(decodeThread);
     decodeThread->start();
-    connect(this, &ControlWidget::startPlay, decode_th, &Decode::decodePacket);
-    connect(decode_th, &Decode::playOver, this, &ControlWidget::onPlayOver);
+    connect(this, &ControlWidget::startPlay, decode_th, &Decoder::decodePacket);
+    connect(decode_th, &Decoder::playOver, this, &ControlWidget::onPlayOver);
 
-    audio_th = new AudioThread();
-    audio_th->setAudioDecoder(decode_th->getAudioDecoder());
+    audio_th = new AudioRenderer();
     audioThread = new QThread();
     audio_th->moveToThread(audioThread);
     audioThread->start();
-    connect(decode_th, &Decode::initAudioOutput, audio_th, &AudioThread::onInitAudioOutput, Qt::DirectConnection);
-    connect(decode_th, &Decode::sendAudioPacket, audio_th, &AudioThread::recvAudioPacket);
-    connect(audio_th, &AudioThread::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
+    connect(decode_th, &Decoder::initAudioOutput, audio_th, &AudioRenderer::onInitAudioOutput, Qt::DirectConnection);
+    connect(decode_th, &Decoder::getCurPts, audio_th, &AudioRenderer::onGetAudioClock, Qt::DirectConnection); // 必须直连
+    connect(decode_th->getAudioDecoder(), &AudioDecoder::sendAudioBuffer, audio_th, &AudioRenderer::recvAudioBuffer);
+    connect(audio_th, &AudioRenderer::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
 
-    video_th = new VideoThread();
-    video_th->setVideoDecoder(decode_th->getVideoDecoder());
+    video_th = new VideoWaiter();
     videoThread = new QThread();
     video_th->moveToThread(videoThread);
     videoThread->start();
-    connect(decode_th, &Decode::sendVideoPacket, video_th, &VideoThread::recvVideoPacket);
-    connect(video_th, &VideoThread::getAudioClock, audio_th, &AudioThread::onGetAudioClock, Qt::DirectConnection); // 必须直连
+    connect(decode_th->getVideoDecoder(), &VideoDecoder::sendVideoFrame, video_th, &VideoWaiter::recvVideoFrame);
+    connect(video_th, &VideoWaiter::getAudioClock, audio_th, &AudioRenderer::onGetAudioClock, Qt::DirectConnection); // 必须直连
 
     // this->label->menu = new QMenu(this);
     // auto actSS = new QAction("开始保存", this->label->menu);
@@ -145,7 +144,7 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     // });
 
     connect(slider, &CSlider::sliderClicked, this, &ControlWidget::startSeek);
-    connect(slider, &CSlider::sliderMoved, decode_th, &Decode::setCurFrame);
+    connect(slider, &CSlider::sliderMoved, decode_th, &Decoder::setCurFrame);
     connect(slider, &CSlider::sliderReleased, this, &ControlWidget::endSeek);
 
     // connect(video_th, &VideoThread::finishPlay, this, &CMediaDialog::terminatePlay);
@@ -283,6 +282,40 @@ void ControlWidget::mousePressEvent(QMouseEvent *event)
     }
 }
 
+void ControlWidget::keyPressEvent(QKeyEvent *event)
+{
+    switch (event->key())
+    {
+    case Qt::Key_Space:
+        changePlayState();
+        break;
+    case Qt::Key_Left:
+        slider->moveToValue(slider->value() - 10);
+        break;
+    case Qt::Key_Right:
+        slider->moveToValue(slider->value() + 10);
+        break;
+
+    default:
+        QWidget::keyPressEvent(event);
+        break;
+    }
+}
+
+bool ControlWidget::eventFilter(QObject *obj, QEvent *e)
+{
+    if (e->type() == QEvent::KeyPress)
+    {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(e);
+        keyPressEvent(keyEvent);
+        return true;
+    }
+    else
+    {
+        return QWidget::eventFilter(obj, e);
+    }
+}
+
 // void ControlWidget::mouseDoubleClickEvent(QMouseEvent *event)
 // {
 //     if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
@@ -319,7 +352,7 @@ void CSlider::mouseMoveEvent(QMouseEvent *event)
         // if (qAbs(value - this->lastLocation) > (one_percent * 5))
         // {
         //     lastLocation = value;
-        //     emit VideoSlider::sliderMoved(value);
+        //     emit CSlider::sliderMoved(value);
         // }
     }
 }
@@ -335,6 +368,17 @@ void CSlider::mouseReleaseEvent(QMouseEvent *event)
         QSlider::mouseReleaseEvent(event);
         emit CSlider::sliderReleased();
     }
+}
+
+void CSlider::moveToValue(int value)
+{
+    emit sliderClicked();
+    setValue(value);
+
+    QThread::msleep(10); // 保证decoder线程暂停
+
+    emit sliderMoved(value);
+    emit sliderReleased();
 }
 
 void CSlider::setRange(int min, int max)

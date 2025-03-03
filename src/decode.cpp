@@ -1,12 +1,47 @@
 #include "decode.h"
 #include "playerCommand.h"
+#include <QDebug>
 #include <QImage>
 #include <QPixmap>
+#include <QThread>
+
+class AVPacketUniquePtr : public std::unique_ptr<AVPacket, void (*)(AVPacket *)>
+{
+public:
+    AVPacketUniquePtr() : std::unique_ptr<AVPacket, void (*)(AVPacket *)>(av_packet_alloc(), [](AVPacket *p)
+                                                                          { av_packet_free(&p); }) {}
+    AVPacketUniquePtr(AVPacket *p) : std::unique_ptr<AVPacket, void (*)(AVPacket *)>(p, [](AVPacket *p)
+                                                                                     { av_packet_free(&p); }) {}
+
+    // 禁用拷贝
+    AVPacketUniquePtr(const AVPacketUniquePtr &) = delete;
+    // 允许移动
+    AVPacketUniquePtr(AVPacketUniquePtr &&) = default;
+};
+
+class AVFrameUniquePtr : public std::unique_ptr<AVFrame, void (*)(AVFrame *)>
+{
+public:
+    AVFrameUniquePtr() : std::unique_ptr<AVFrame, void (*)(AVFrame *)>(av_frame_alloc(), [](AVFrame *p)
+                                                                       { av_frame_free(&p); }) {}
+
+    // 禁用拷贝
+    AVFrameUniquePtr(const AVFrameUniquePtr &) = delete;
+    // 允许移动
+    AVFrameUniquePtr(AVFrameUniquePtr &&) = default;
+
+    AVFrameUniquePtr(AVFrame *p) : std::unique_ptr<AVFrame, void (*)(AVFrame *)>(p, [](AVFrame *p)
+                                                                                 { av_frame_free(&p); }) {}
+
+    AVFrameUniquePtr &operator=(const AVFrameUniquePtr &) = delete;
+    AVFrameUniquePtr &operator=(AVFrameUniquePtr &&other) = default;
+    AVFrameUniquePtr &operator=(AVFrame *other) { return *this = AVFrameUniquePtr(other); }
+};
 
 #define MAX_AUDIO_FRAME_SIZE 192000
 QString av_get_pixelformat_name(AVPixelFormat format);
 
-Decode::Decode(const int *_type, QObject *parent)
+Decoder::Decoder(const int *_type, QObject *parent)
     : QObject(parent),
       formatContext(nullptr),
       mediaType(UNKNOWN),
@@ -14,7 +49,6 @@ Decode::Decode(const int *_type, QObject *parent)
 {
     avformat_network_init(); // Initialize FFmpeg network components
     audioDecoder = new AudioDecoder(this);
-    audioDecoder->convertedAudioBuffer = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE);
     videoDecoder = new VideoDecoder(this);
 
     // 遍历出设备支持的硬件类型
@@ -26,13 +60,11 @@ Decode::Decode(const int *_type, QObject *parent)
     }
 }
 
-Decode::~Decode()
+Decoder::~Decoder()
 {
-    clean();
-    av_free(audioDecoder->convertedAudioBuffer);
 }
 
-void Decode::setVideoPath(const QString &filePath)
+void Decoder::setVideoPath(const QString &filePath)
 {
     clean();
     if (NO_ERROR == initFFmpeg(filePath))
@@ -45,7 +77,7 @@ void Decode::setVideoPath(const QString &filePath)
     }
 }
 
-int64_t Decode::getAudioFrameCount() const
+int64_t Decoder::getAudioFrameCount() const
 {
     if (audioStreamIndex == -1)
         return -1;
@@ -55,7 +87,7 @@ int64_t Decode::getAudioFrameCount() const
     return ret;
 }
 
-int64_t Decode::getVideoFrameCount() const
+int64_t Decoder::getVideoFrameCount() const
 {
     if (videoStreamIndex == -1)
         return -1;
@@ -65,7 +97,7 @@ int64_t Decode::getVideoFrameCount() const
     return ret;
 }
 
-int64_t Decode::getDuration() const
+int64_t Decoder::getDuration() const
 {
     if (formatContext == nullptr)
         return -1;
@@ -76,7 +108,7 @@ int64_t Decode::getDuration() const
     return ret;
 }
 
-QList<QString> Decode::getSupportedHwDecoderNames()
+QList<QString> Decoder::getSupportedHwDecoderNames()
 {
     QList<QString> ret;
     AVBufferRef *hw_device_ctx = nullptr;
@@ -96,7 +128,7 @@ QList<QString> Decode::getSupportedHwDecoderNames()
     return ret;
 }
 
-bool Decode::resume()
+bool Decoder::resume()
 {
     if (formatContext == nullptr)
         return false;
@@ -106,7 +138,7 @@ bool Decode::resume()
     return true;
 }
 
-void Decode::setCurFrame(int64_t curPts_s)
+void Decoder::setCurFrame(int64_t curPts_s)
 {
     if (formatContext == nullptr)
         return;
@@ -118,7 +150,7 @@ void Decode::setCurFrame(int64_t curPts_s)
     av_seek_frame(formatContext, defaltStreamIndex, timestamp, AVSEEK_FLAG_BACKWARD);
 }
 
-int Decode::initFFmpeg(const QString &filePath)
+int Decoder::initFFmpeg(const QString &filePath)
 {
     try
     {
@@ -163,7 +195,7 @@ int Decode::initFFmpeg(const QString &filePath)
     return NO_ERROR;
 }
 
-int Decode::initAudioDecoder()
+int Decoder::initAudioDecoder()
 {
     auto &audioCodecContext = audioDecoder->codecContext;
     auto &swrContext = audioDecoder->swrContext;
@@ -179,7 +211,7 @@ int Decode::initAudioDecoder()
     else if (audioStreamIndex == AVERROR_DECODER_NOT_FOUND)
         throw FIND_AUDIO_DECODER_ERROR;
 
-    if (initCodec(&audioCodecContext, audioStreamIndex, audioCodec) < 0)
+    if (initCodec(&audioCodecContext, formatContext->streams[audioStreamIndex]->codecpar, audioCodec) < 0)
         throw INIT_AUDIO_CODEC_CONTEXT_ERROR;
 
     // Initialize resampler context
@@ -212,7 +244,7 @@ int Decode::initAudioDecoder()
     return audioStreamIndex;
 }
 
-int Decode::initVideoDecoder(QList<AVHWDeviceType> &devices)
+int Decoder::initVideoDecoder(QList<AVHWDeviceType> &devices)
 {
     auto &videoCodecContext = videoDecoder->codecContext;
     auto &videoStreamIndex = videoDecoder->videoStreamIndex;
@@ -234,7 +266,7 @@ int Decode::initVideoDecoder(QList<AVHWDeviceType> &devices)
     if (!devices.isEmpty())
         initHwdeviceCtx(videoCodec, formatContext->streams[videoStreamIndex]->codecpar->width, devices, hw_device_pix_fmt, hw_device_type, &hw_device_ctx);
 
-    if (initCodec(&videoCodecContext, videoStreamIndex, videoCodec) < 0)
+    if (initCodec(&videoCodecContext, formatContext->streams[videoStreamIndex]->codecpar, videoCodec) < 0)
         throw INIT_VIDEO_CODEC_CONTEXT_ERROR;
 
     time_base_q2d_ms = av_q2d(formatContext->streams[videoStreamIndex]->time_base) * 1000;
@@ -250,8 +282,24 @@ int Decode::initVideoDecoder(QList<AVHWDeviceType> &devices)
     return videoStreamIndex;
 }
 
-void Decode::initHwdeviceCtx(const AVCodec *videoCodec, int videoWidth, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx)
+void Decoder::initHwdeviceCtx(const AVCodec *videoCodec, int videoWidth, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx)
 {
+    // 硬解优先选择AV_HWDEVICE_TYPE_D3D12VA, 其次 11, 逻辑待优化
+    if (devices.contains(AV_HWDEVICE_TYPE_D3D12VA) && 0 == av_hwdevice_ctx_create(hw_device_ctx, AV_HWDEVICE_TYPE_D3D12VA, nullptr, nullptr, 0))
+    {
+        hw_device_pix_fmt = AV_PIX_FMT_D3D12;
+        hw_device_type = AV_HWDEVICE_TYPE_D3D12VA;
+        qDebug() << "hw_device_type: AV_HWDEVICE_TYPE_D3D12VA";
+        return;
+    }
+    else if (devices.contains(AV_HWDEVICE_TYPE_D3D11VA) && 0 == av_hwdevice_ctx_create(hw_device_ctx, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0))
+    {
+        hw_device_pix_fmt = AV_PIX_FMT_D3D11;
+        hw_device_type = AV_HWDEVICE_TYPE_D3D11VA;
+        qDebug() << "hw_device_type: AV_HWDEVICE_TYPE_D3D11VA";
+        return;
+    }
+
     const AVCodecHWConfig *config = nullptr; // 硬解码器
     for (int i = 0;; i++)
     {
@@ -289,18 +337,17 @@ void Decode::initHwdeviceCtx(const AVCodec *videoCodec, int videoWidth, QList<AV
     }
 }
 
-int Decode::initCodec(AVCodecContext **codecContext, int streamIndex, const AVCodec *codec)
+int Decoder::initCodec(AVCodecContext **codecContext, AVCodecParameters *codecpar, const AVCodec *codec)
 {
     *codecContext = avcodec_alloc_context3(codec);
-    AVStream *stream = formatContext->streams[streamIndex];
 
-    avcodec_parameters_to_context(*codecContext, stream->codecpar);
+    avcodec_parameters_to_context(*codecContext, codecpar);
 
     // 如果是视频流，并且支持硬件加速，则设置硬件加速
-    if (formatContext->streams[streamIndex]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoDecoder->hw_device_type != AV_HWDEVICE_TYPE_NONE && videoDecoder->hw_device_ctx != nullptr)
+    if (codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoDecoder->hw_device_type != AV_HWDEVICE_TYPE_NONE && videoDecoder->hw_device_ctx != nullptr)
     {
-        (*codecContext)->opaque = &this->videoDecoder->hw_device_pix_fmt;
-        (*codecContext)->get_format = getHwFormat;
+        // (*codecContext)->opaque = &this->videoDecoder->hw_device_pix_fmt;
+        // (*codecContext)->get_format = getHwFormat;
         (*codecContext)->hw_device_ctx = av_buffer_ref(videoDecoder->hw_device_ctx);
         av_buffer_unref(&videoDecoder->hw_device_ctx);
     }
@@ -308,7 +355,7 @@ int Decode::initCodec(AVCodecContext **codecContext, int streamIndex, const AVCo
     return avcodec_open2(*codecContext, codec, nullptr);
 }
 
-void Decode::clean()
+void Decoder::clean()
 {
     clearPacketQueue();
     mediaType = UNKNOWN;
@@ -324,13 +371,14 @@ void Decode::clean()
     }
 }
 
-void Decode::clearPacketQueue()
+void Decoder::clearPacketQueue()
 {
     if (videoDecoder && videoDecoder->codecContext)
         avcodec_flush_buffers(videoDecoder->codecContext);
 
-    audioDecoder->packetIsUsed = true;
-    videoDecoder->packetIsUsed = true;
+    audioDecoder->lastPts = -1.0;
+    videoDecoder->lastPts = -1.0;
+
     while (!audioPacketQueue.isEmpty())
     {
         auto packet = audioPacketQueue.dequeue();
@@ -343,7 +391,7 @@ void Decode::clearPacketQueue()
     }
 }
 
-void Decode::decodePacket()
+void Decoder::decodePacket()
 {
     if (*m_type != CONTL_TYPE::PLAY)
         return;
@@ -373,10 +421,32 @@ void Decode::decodePacket()
     }
 }
 
-void Decode::decodeAudio()
+void Decoder::decodeAudio()
 {
     while (*m_type == CONTL_TYPE::PLAY)
     {
+#if true
+        emit getCurPts(curPts);
+        if (curPts > audioDecoder->lastPts)
+        {
+            AVPacketUniquePtr packet;
+            if (av_read_frame(formatContext, packet.get()) < 0)
+            {
+                throw (int)CONTL_TYPE::END;
+            }
+
+            if (packet->stream_index == audioStreamIndex)
+            {
+                // qDebug() << "audioStreamIndex, packet->pts: " << audioDecoder->time_base_q2d_ms * packet->pts;
+                if (*m_type == CONTL_TYPE::PLAY)
+                    audioDecoder->decodeAudioPacket(std::move(packet));
+            }
+            else
+            {
+                qDebug() << "in audio unknow stream index: " << packet->stream_index;
+            }
+        }
+#else
         while (audioDecoder->packetIsUsed == false)
         {
             if (*m_type != CONTL_TYPE::PLAY)
@@ -397,17 +467,88 @@ void Decode::decodeAudio()
             qDebug() << "unknow stream index: " << packet->stream_index;
             av_packet_free(&packet);
         }
+#endif
     }
 }
 
-void Decode::decodeVideo()
+void Decoder::decodeVideo()
 {
 }
 
-void Decode::decodeMultMedia()
+void Decoder::decodeMultMedia()
 {
     while (*m_type == CONTL_TYPE::PLAY)
     {
+#if true
+        emit getCurPts(curPts);
+        if (curPts > audioDecoder->lastPts)
+        {
+            AVPacket *packet = nullptr;
+            if (!audioPacketQueue.isEmpty())
+            {
+                packet = audioPacketQueue.dequeue();
+            }
+            else
+            {
+                packet = av_packet_alloc();
+                if (av_read_frame(formatContext, packet) < 0)
+                {
+                    av_packet_free(&packet);
+                    throw (int)CONTL_TYPE::END;
+                }
+            }
+
+            if (packet->stream_index == audioStreamIndex)
+            {
+                // qDebug() << "audioStreamIndex, packet->pts: " << audioDecoder->time_base_q2d_ms * packet->pts;
+                if (*m_type == CONTL_TYPE::PLAY)
+                    audioDecoder->decodeAudioPacket(packet);
+            }
+            else if (packet->stream_index == videoStreamIndex)
+            {
+                videoPacketQueue.enqueue(packet);
+            }
+            else
+            {
+                qDebug() << "in audio unknow stream index: " << packet->stream_index;
+                av_packet_free(&packet);
+            }
+        }
+
+        if (curPts > videoDecoder->lastPts)
+        {
+            AVPacket *packet = nullptr;
+            if (!videoPacketQueue.isEmpty())
+            {
+                packet = videoPacketQueue.dequeue();
+            }
+            else
+            {
+                packet = av_packet_alloc();
+                if (av_read_frame(formatContext, packet) < 0)
+                {
+                    av_packet_free(&packet);
+                    throw (int)CONTL_TYPE::END;
+                }
+            }
+
+            if (packet->stream_index == videoStreamIndex)
+            {
+                // qDebug() << "videoStreamIndex, packet->pts: " << videoDecoder->time_base_q2d_ms * packet->pts;
+                if (*m_type == CONTL_TYPE::PLAY)
+                    videoDecoder->decodeVideoPacket(packet);
+            }
+            else if (packet->stream_index == audioStreamIndex)
+            {
+                audioPacketQueue.enqueue(packet);
+            }
+            else
+            {
+                qDebug() << "in video unknow stream index: " << packet->stream_index;
+                av_packet_free(&packet);
+            }
+        }
+#else
         while (audioDecoder->packetIsUsed == false && videoDecoder->packetIsUsed == false)
         {
             if (*m_type != CONTL_TYPE::PLAY)
@@ -477,6 +618,7 @@ void Decode::decodeMultMedia()
                 av_packet_free(&packet);
             }
         }
+#endif
     }
 }
 
@@ -490,46 +632,55 @@ void AudioDecoder::clean()
         avcodec_free_context(&codecContext);
 }
 
-void AudioDecoder::decodeAudioPacket(AVPacket *packet)
+int AudioDecoder::transferFrameToPCM(AVFrame *frame, uint8_t *dstBuffer)
+{
+    int64_t out_nb_samples = av_rescale_rnd(
+        swr_get_delay(swrContext, frame->sample_rate) + frame->nb_samples,
+        44100,
+        frame->sample_rate,
+        AV_ROUND_UP);
+
+    int convertedSize = swr_convert( // 返回转换出的数据大小
+        swrContext,                  // 转换工具
+        &dstBuffer,                  // 输出
+        out_nb_samples,              // 输出样本数
+        frame->data,                 // 输入
+        frame->nb_samples);          // 输入样本数
+
+    return convertedSize;
+}
+
+void AudioDecoder::decodeAudioPacket(AVPacketUniquePtr packet)
 {
     // 将音频帧发送到音频解码器
-    if (avcodec_send_packet(codecContext, packet) == 0)
+    if (avcodec_send_packet(codecContext, packet.get()) == 0)
     {
-        av_packet_free(&packet);
-        auto frame = av_frame_alloc();
-        if (avcodec_receive_frame(codecContext, frame) == 0)
+        AVFrameUniquePtr frame;
+        if (avcodec_receive_frame(codecContext, frame.get()) == 0)
         {
-            int64_t out_nb_samples = av_rescale_rnd(
-                swr_get_delay(swrContext, frame->sample_rate) + frame->nb_samples,
-                44100,
-                frame->sample_rate,
-                AV_ROUND_UP);
-
-            // 将音频帧转换为 PCM 格式
-            // convertedSize：转换后音频数据的大小
-            int convertedSize = swr_convert(
-                swrContext,                          // 转换工具?
-                &convertedAudioBuffer,               // 输出
-                out_nb_samples,                      // 输出大小
-                (const uint8_t *const *)frame->data, // 输入
-                frame->nb_samples);                  // 输入大小
+            std::unique_ptr<uint8_t[]> convertedAudioBuffer(new uint8_t[MAX_AUDIO_FRAME_SIZE]);
+            int convertedSize = transferFrameToPCM(frame.get(), convertedAudioBuffer.get());
 
             if (convertedSize > 0)
             {
-                int bufferSize = av_samples_get_buffer_size(nullptr,
-                                                            frame->ch_layout.nb_channels,
-                                                            convertedSize,
-                                                            AV_SAMPLE_FMT_S16,
-                                                            1);
-                double framePts = time_base_q2d_ms * frame->pts;
-                // 将转换后的音频数据发送到音频播放器
+                int channels = frame.get()->ch_layout.nb_channels;
+                int bufferSize = av_samples_get_buffer_size(nullptr, channels, convertedSize, AV_SAMPLE_FMT_S16, 1);
+                double framePts = time_base_q2d_ms * frame.get()->pts;
 
-                emit sendAudioBuffer(convertedAudioBuffer, bufferSize, framePts);
-                av_frame_free(&frame);
+                lastPts = framePts;
+                // 将转换后的音频数据发送到音频播放器
+                emit sendAudioBuffer(convertedAudioBuffer.release(), bufferSize, framePts);
+            }
+            else
+            {
+                qDebug() << "in audio decode frame error";
             }
         }
+        else
+        {
+            qDebug() << "in audio decode frame error";
+        }
     }
-    packetIsUsed = true;
 }
 
 void VideoDecoder::clean()
@@ -540,11 +691,10 @@ void VideoDecoder::clean()
         avcodec_free_context(&codecContext);
 }
 
-void VideoDecoder::decodeVideoPacket(AVPacket *packet)
+void VideoDecoder::decodeVideoPacket(AVPacketUniquePtr packet)
 {
-    if (avcodec_send_packet(codecContext, packet) == 0)
+    if (avcodec_send_packet(codecContext, packet.get()) == 0)
     {
-        av_packet_free(&packet);
         auto frame = av_frame_alloc();
         int ret = avcodec_receive_frame(codecContext, frame);
         if (ret == 0)
@@ -564,50 +714,49 @@ void VideoDecoder::decodeVideoPacket(AVPacket *packet)
                 pixelData = copyNv12Data(frame->data, frame->linesize, frame->width, frame->height);
                 break;
             default:
-            {
-                auto dstFrame = transFrameToDstFmt(frame, frame->width, frame->height, AV_PIX_FMT_YUV420P);
-                pixelData = copyYuv420pData(dstFrame->data, dstFrame->linesize, dstFrame->width, dstFrame->height);
-                av_frame_free(&dstFrame);
-                // qDebug() << "in video unknow stream format: " << frame->format;
+                pixelData = copyDefaultData(frame);
                 break;
             }
-            }
 
+            lastPts = framePts;
             emit sendVideoFrame(pixelData, frame->width, frame->height, framePts);
-            av_frame_free(&frame);
         }
         else if (ret != AVERROR(EAGAIN))
         {
             qDebug() << "avcodec_receive_frame fail: " << ret;
         }
+        else
+        {
+            qDebug() << "avcodec_receive_frame EAGAIN";
+        }
+        av_frame_free(&frame);
     }
     else
     {
         qDebug() << "avcodec_send_packet fail";
     }
-    packetIsUsed = true;
 }
 
 void VideoDecoder::transferDataFromHW(AVFrame **frame)
 {
     // 如果采用的硬件加速, 解码后的数据还在GPU中, 所以需要通过av_hwframe_transfer_data将GPU中的数据转移到内存中
     // GPU解码数据格式固定为NV12, 来源: https://blog.csdn.net/qq_23282479/article/details/118993650
-    AVFrame *tmp_frame = av_frame_alloc();
-    if (0 > av_hwframe_transfer_data(tmp_frame, *frame, 0))
+    AVFrameUniquePtr tmp_frame;
+    if (0 > av_hwframe_transfer_data(tmp_frame.get(), *frame, 0))
     {
         qDebug() << "av_hwframe_transfer_data fail";
-        av_frame_free(&tmp_frame);
         return;
     }
+
     av_frame_free(frame);
+
     if (tmp_frame->format != AV_PIX_FMT_NV12)
-    { // 如果不是NV12格式, 则转换为NV12格式, 临时结构, 后续再重新梳理
-        *frame = transFrameToDstFmt(tmp_frame, tmp_frame->width, tmp_frame->height, AV_PIX_FMT_NV12);
-        av_frame_free(&tmp_frame);
+    { // 如果不是 NV12 格式, 则转换为NV12格式, 临时结构, 后续再重新梳理
+        *frame = transFrameToDstFmt(tmp_frame.get(), tmp_frame.get()->width, tmp_frame.get()->height, AV_PIX_FMT_NV12);
     }
     else
     {
-        *frame = tmp_frame;
+        *frame = tmp_frame.release();
     }
 }
 
@@ -650,6 +799,12 @@ uint8_t *VideoDecoder::copyYuv420pData(uint8_t **pixelData, int *linesize, int p
         memcpy(v + i * halfWidth, pixelData[2] + i * linesize[2], static_cast<size_t>(halfWidth));
     }
     return pixel;
+}
+
+uint8_t *VideoDecoder::copyDefaultData(AVFrame *frame)
+{
+    AVFrameUniquePtr dstFrame = transFrameToDstFmt(frame, frame->width, frame->height, AV_PIX_FMT_YUV420P);
+    return copyYuv420pData(dstFrame.get()->data, frame->linesize, frame->width, frame->height);
 }
 
 AVFrame *VideoDecoder::transFrameToRGB24(AVFrame *srcFrame, int pixelWidth, int pixelHeight)
@@ -698,9 +853,8 @@ int VideoDecoder::writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight,
 
     if (frame->format != AV_PIX_FMT_RGB24)
     {
-        AVFrame *frameRGB = transFrameToRGB24(frame, pixelWidth, pixelHeight);
-        QImage(frameRGB->data[0], pixelWidth, pixelHeight, frameRGB->linesize[0], QImage::Format_RGB888).save(fileName);
-        av_frame_free(&frameRGB);
+        AVFrameUniquePtr frameRGB = transFrameToRGB24(frame, pixelWidth, pixelHeight);
+        QImage(frameRGB.get()->data[0], pixelWidth, pixelHeight, frameRGB.get()->linesize[0], QImage::Format_RGB888).save(fileName);
     }
     else
     {
@@ -710,23 +864,23 @@ int VideoDecoder::writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight,
     return 0;
 }
 
-AVPixelFormat Decode::getHwFormat(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
-{
-    const enum AVPixelFormat *p;
-    AVPixelFormat hw_device_pix_fmt = *(static_cast<AVPixelFormat *>(ctx->opaque));
-    for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++)
-    {
-        if (*p == hw_device_pix_fmt)
-        {
-            return *p;
-        }
-    }
+// AVPixelFormat Decoder::getHwFormat(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
+// {
+//     const enum AVPixelFormat *p;
+//     AVPixelFormat hw_device_pix_fmt = *(static_cast<AVPixelFormat *>(ctx->opaque));
+//     for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++)
+//     {
+//         if (*p == hw_device_pix_fmt)
+//         {
+//             return *p;
+//         }
+//     }
 
-    qDebug() << "Failed to get HW surface format.";
-    return AV_PIX_FMT_NONE;
-}
+//     qDebug() << "Failed to get HW surface format.";
+//     return AV_PIX_FMT_NONE;
+// }
 
-void Decode::debugError(FFMPEG_INIT_ERROR error)
+void Decoder::debugError(FFMPEG_INIT_ERROR error)
 {
     switch (error)
     {

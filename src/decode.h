@@ -1,10 +1,11 @@
 #pragma once
-
 #include <QAudioOutput>
-#include <QIODevice>
 #include <QDebug>
+#include <QIODevice>
 #include <QMetaType>
 #include <QQueue>
+#include <QScopedPointer>
+#include <QSharedPointer>
 #include <QThread>
 
 extern "C"
@@ -18,17 +19,20 @@ extern "C"
 
 class AudioDecoder;
 class VideoDecoder;
+class AVPacketUniquePtr;
 
 #ifndef QMETATYPEID_DECODER
 #define QMETATYPEID_DECODER
-Q_DECLARE_METATYPE(AudioDecoder *);
-Q_DECLARE_METATYPE(VideoDecoder *);
+// Q_DECLARE_METATYPE(AudioDecoder *);
+// Q_DECLARE_METATYPE(VideoDecoder *);
 #endif
 
-class Decode : public QObject
+class Decoder : public QObject
 {
     Q_OBJECT
 signals:
+    void getCurPts(double &pts);
+
     void startPlay();
     void playOver();
 
@@ -87,6 +91,8 @@ private:
     int defaltStreamIndex; // 默认流索引
     double defalt_time_base_q2d_ms;
 
+    double curPts = 0.0;
+
     const int *m_type; // 控制播放状态
 
     // 初始化
@@ -100,22 +106,20 @@ private:
     void initHwdeviceCtx(const AVCodec *videoCodec, int videoWidth, QList<AVHWDeviceType> &devices, AVPixelFormat &hw_device_pix_fmt, AVHWDeviceType &hw_device_type, AVBufferRef **hw_device_ctx);
 
     // AVCodecContext *getCudaDecoder
-    int initCodec(AVCodecContext **codecContext, int videoStreamIndex, const AVCodec *codec);
+    int initCodec(AVCodecContext **codecContext, AVCodecParameters *codecParameters, const AVCodec *codec);
 
     void clean();
     void clearPacketQueue();
 
     void debugError(FFMPEG_INIT_ERROR error);
 
-    static AVPixelFormat getHwFormat(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts);
-
     void decodeAudio();
     void decodeVideo();
     void decodeMultMedia();
 
 public:
-    explicit Decode(const int *_type, QObject *parent = nullptr);
-    ~Decode();
+    explicit Decoder(const int *_type, QObject *parent = nullptr);
+    ~Decoder();
 
     void setVideoPath(const QString &filePath);
 
@@ -137,7 +141,7 @@ public:
 
 class AudioDecoder : public QObject
 {
-    friend class Decode;
+    friend class Decoder;
     Q_OBJECT
 signals:
     void sendAudioBuffer(uint8_t *audioBuffer, int bufferSize, double pts);
@@ -146,13 +150,11 @@ private:
     AVCodecContext *codecContext{nullptr};
     SwrContext *swrContext{nullptr};
 
-    uint8_t *convertedAudioBuffer{nullptr};
-
     int audioStreamIndex;
 
     double time_base_q2d_ms;
 
-    bool packetIsUsed = true;
+    double lastPts = -1.0;
 
     void clean();
 
@@ -160,12 +162,16 @@ public:
     AudioDecoder(QObject *parent = nullptr) : QObject(parent) {}
     ~AudioDecoder() = default;
 
-    void decodeAudioPacket(AVPacket *packet);
+    // 将音频帧转换为 PCM 格式
+    // 返回值: 转换后音频数据的大小
+    int transferFrameToPCM(AVFrame *frame, uint8_t *dstBuffer);
+
+    void decodeAudioPacket(AVPacketUniquePtr packet);
 };
 
 class VideoDecoder : public QObject
 {
-    friend class Decode;
+    friend class Decoder;
     Q_OBJECT
 signals:
     void sendVideoFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight, double pts);
@@ -181,7 +187,7 @@ private:
 
     double time_base_q2d_ms;
 
-    bool packetIsUsed = true;
+    double lastPts = -1.0;
 
     void clean();
 
@@ -190,12 +196,13 @@ private:
 
     uint8_t *copyNv12Data(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
     uint8_t *copyYuv420pData(uint8_t **pixelData, int *linesize, int pixelWidth, int pixelHeight);
+    uint8_t *copyDefaultData(AVFrame *rawFrame);
 
 public:
     VideoDecoder(QObject *parent = nullptr) : QObject(parent) {}
     ~VideoDecoder() = default;
 
-    void decodeVideoPacket(AVPacket *packet);
+    void decodeVideoPacket(AVPacketUniquePtr packet);
 
     AVFrame *transFrameToRGB24(AVFrame *frame, int pixelWidth, int pixelHeight);
     AVFrame *transFrameToDstFmt(AVFrame *srcFrame, int pixelWidth, int pixelHeight, AVPixelFormat dstFormat);

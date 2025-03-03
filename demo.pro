@@ -15,23 +15,23 @@ qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
-HEADERS += \
-    src/CMediaDialog.h \
-    src/AudioThread.h \
-    src/Decode.h \
-    src/OpenGLWidget.h \
-    src/demo.h \
+HEADERS +=              \
+    src/demo.h          \
+    src/CMediaDialog.h  \
+    src/Decode.h        \
+    src/AudioRenderer.h \
+    src/VideoWaiter.h   \
+    src/OpenGLWidget.h  \
     src/playerCommand.h \
-    src/VideoThread.h
 
-SOURCES += \
-    src/CMediaDialog.cpp \
-    src/AudioThread.cpp \
-    src/Decode.cpp \
-    src/OpenGLWidget.cpp \
-    src/demo.cpp \
-    src/main.cpp \
-    src/VideoThread.cpp
+SOURCES +=                  \
+    src/demo.cpp            \
+    src/CMediaDialog.cpp    \
+    src/Decode.cpp          \
+    src/AudioRenderer.cpp   \
+    src/VideoWaiter.cpp     \
+    src/OpenGLWidget.cpp    \
+    src/main.cpp            \
 
 # $$PWD 表示pro文件的当前路径
 LIBS += $$PWD/lib/ffmpeg/lib/*.lib

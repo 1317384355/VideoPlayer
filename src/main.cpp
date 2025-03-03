@@ -1,6 +1,5 @@
 #include "demo.h"
 #include <QAPPlication>
-#include <QDialog>
 
 int main(int argc, char *argv[])
 {
