@@ -126,7 +126,7 @@ void BaseOpenGLWidget::setPixelData(uint8_t *pixelData, int width, int height)
 
     videoW = width;
     videoH = height;
-    update();
+    // update();
 }
 
 void Nv12GLWidget::initializeGL()
@@ -159,6 +159,26 @@ void Nv12GLWidget::paintGL()
     // glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); //  GL_TRIANGLE_STRIP会导致屏幕左侧出现一个三角形
     // glDrawArrays(GL_TRIANGLE_FAN, 0, 4); // 与GL_QUADS效果相同, 原因暂不清楚
     glDrawArrays(GL_QUADS, 0, 4);
+}
+
+void Nv12GLWidget::resizeGL(int w, int h)
+{
+    widgetRatio = (float)w / h;
+    if (widgetRatio > videoRatio)
+    {
+        viewW = h * videoRatio;
+        viewH = h;
+        x = (w - viewW) / 2;
+        y = 0;
+    }
+    else
+    {
+        viewW = w;
+        viewH = w / videoRatio;
+        x = 0;
+        y = (h - viewH) / 2;
+    }
+    paintGL();
 }
 
 void Yuv420GLWidget::initializeGL()
@@ -198,4 +218,24 @@ void Yuv420GLWidget::paintGL()
     glUniform1i(textureUniformU, 1);
     glUniform1i(textureUniformV, 2);
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+}
+
+void Yuv420GLWidget::resizeGL(int w, int h)
+{
+    widgetRatio = (float)w / h;
+    if (widgetRatio > videoRatio)
+    {
+        viewW = h * videoRatio;
+        viewH = h;
+        x = (w - viewW) / 2;
+        y = 0;
+    }
+    else
+    {
+        viewW = w;
+        viewH = w / videoRatio;
+        x = 0;
+        y = (h - viewH) / 2;
+    }
+    paintGL();
 }

@@ -9,24 +9,75 @@
 #include <QScrollArea>
 #include <QStackedLayout>
 #include <QVBoxLayout>
+#include <QMenuBar>
+#include <QStandardPaths>
+#include <QStatusBar>
 
-CMediaDialog::CMediaDialog(QWidget *parent) : QWidget(parent)
+CMediaDialog::CMediaDialog(QWidget *parent) : QMainWindow(parent)
 {
-    QStackedLayout *stackedLayout = new QStackedLayout(this);
-    stackedLayout->setContentsMargins(0, 0, 0, 0);
-    this->setLayout(stackedLayout);
+    this->resize(800, 600);
 
-    frameWidget = new FrameWidget(this);
+    openFile = new QAction("打开文件", this);
+    connect(openFile, &QAction::triggered, this, &CMediaDialog::onOpenFile);
+    this->menuBar()->addAction(openFile);
+
+    // QAction *openRtsp = new QAction("打开RTSP", this);
+    // this->menuBar()->addAction(openRtsp);
+    // connect(openRtsp, &QAction::triggered, [this]() { //
+    //     this->controlWidget->showVideo("rtsp://127.0.0.1:8554/0");
+    // });
+
+    QWidget *centralWidget = new QWidget(this);
+    this->setCentralWidget(centralWidget);
+
+    centralWidget->setLayout(new QHBoxLayout(centralWidget));
+    centralWidget->layout()->setContentsMargins(0, 0, 0, 0);
+
+    QWidget *stackedWidget = new QWidget(this);
+    centralWidget->layout()->addWidget(stackedWidget);
+
+    listWidget = new QListWidget(centralWidget);
+    centralWidget->layout()->addWidget(listWidget);
+    listWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
+
+    QStackedLayout *stackedLayout = new QStackedLayout(stackedWidget);
+    stackedLayout->setContentsMargins(0, 0, 0, 0);
+    stackedWidget->setLayout(stackedLayout);
+
+    frameWidget = new FrameWidget(stackedWidget);
     stackedLayout->addWidget(frameWidget);
 
-    controlWidget = new ControlWidget(this);
+    controlWidget = new ControlWidget(stackedWidget);
     stackedLayout->addWidget(controlWidget);
 
     stackedLayout->setCurrentIndex(1);
     stackedLayout->setStackingMode(QStackedLayout::StackAll);
     connect(controlWidget->decodethPtr(), &Decoder::initVideoOutput, frameWidget, &FrameWidget::onInitVideoOutput);
-    connect(controlWidget->videothPtr(), &VideoWaiter::sendFrame, frameWidget, &FrameWidget::receviceFrame);
-    // connect(controlWidget, &ControlWidget::fullScreenRequest, this, &CMediaDialog::onFullScreenRequest); // 全屏有bug，暂时不使用
+    connect(controlWidget->decodethPtr()->getVideoDecoder(), &VideoDecoder::sendVideoFrame, frameWidget, &FrameWidget::receviceFrame);
+    connect(controlWidget, &ControlWidget::openFileRequest, this, &CMediaDialog::onOpenFile);
+    connect(controlWidget, &ControlWidget::fullScreenRequest, this, &CMediaDialog::onFullScreenRequest);
+    connect(controlWidget, &ControlWidget::setListVisible, [this](bool visible)
+            { listWidget->setVisible(visible); });
+}
+
+void CMediaDialog::onOpenFile()
+{
+    QString path = QFileDialog::getOpenFileName(this, "选择视频文件", QStandardPaths::writableLocation(QStandardPaths::StandardLocation::MoviesLocation), "Media Files(*.mp4 *.avi *.mkv *.mp3 *.wav);;All Files(*)");
+    if (path.isEmpty())
+        return;
+    controlWidget->showVideo(path);
+    this->statusBar()->showMessage(path);
+}
+
+void CMediaDialog::onOpenFolder()
+{
+    QString path = QFileDialog::getExistingDirectory(this, "选择视频文件夹", QStandardPaths::writableLocation(QStandardPaths::StandardLocation::MoviesLocation));
+    if (path.isEmpty())
+        return;
+    listWidget->clear();
+    QStringList filters = {"*.mp4", "*.mp3", "*.mkv", "*.avi", "*.wav"};
+    QStringList files = QDir(path).entryList(filters, QDir::Files | QDir::Readable, QDir::Name);
+    listWidget->addItems(files);
 }
 
 void CMediaDialog::onFullScreenRequest()
@@ -34,16 +85,16 @@ void CMediaDialog::onFullScreenRequest()
     // qDebug() << "onFullScreenRequest";
     if (this->isFullScreen())
     {
-        if (this->parentWidget())
-            this->parentWidget()->show();
         // setWindowFlags(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint);
+        this->menuBar()->show();
+        this->statusBar()->show();
         showNormal();
     }
     else
     { // // 窗口全屏化
-        if (this->parentWidget())
-            this->parentWidget()->hide();
         // setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+        this->menuBar()->hide();
+        this->statusBar()->hide();
         showFullScreen();
     }
 }
@@ -100,12 +151,12 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
         totalTimeLabel->setStyleSheet("color: white;");
         sliderWidget->layout()->addWidget(totalTimeLabel);
 
-        btn = new QPushButton("test", sliderWidget);
-        btn->setStyleSheet("background-color: white;");
-        sliderWidget->layout()->addWidget(btn);
-        connect(btn, &QPushButton::clicked, [&]() { //
-            this->m_type = CONTL_TYPE::END;
-        });
+        listVisible = new QPushButton(sliderWidget);
+        listVisible->setFixedSize(40, 30);
+        listVisible->setCheckable(true);
+        listVisible->setChecked(true);
+        sliderWidget->layout()->addWidget(listVisible);
+        connect(listVisible, &QPushButton::clicked, this, &ControlWidget::setListVisible);
     }
 
     decode_th = new Decoder(&m_type);
@@ -124,24 +175,12 @@ ControlWidget::ControlWidget(QWidget *parent) : QWidget(parent)
     connect(decode_th->getAudioDecoder(), &AudioDecoder::sendAudioBuffer, audio_th, &AudioRenderer::recvAudioBuffer);
     connect(audio_th, &AudioRenderer::audioClockChanged, this, &ControlWidget::onAudioClockChanged);
 
-    video_th = new VideoWaiter();
-    videoThread = new QThread();
-    video_th->moveToThread(videoThread);
-    videoThread->start();
-    connect(decode_th->getVideoDecoder(), &VideoDecoder::sendVideoFrame, video_th, &VideoWaiter::recvVideoFrame);
-    connect(video_th, &VideoWaiter::getAudioClock, audio_th, &AudioRenderer::onGetAudioClock, Qt::DirectConnection); // 必须直连
-
-    // this->label->menu = new QMenu(this);
-    // auto actSS = new QAction("开始保存", this->label->menu);
-    // this->label->menu->addAction(actSS);
-    // auto actES = new QAction("结束保存", this->label->menu);
-    // this->label->menu->addAction(actES);
-    // connect(actSS, &QAction::triggered, [=]() { //
-    //     video_th->startSave();
-    // });
-    // connect(actES, &QAction::triggered, [=]() { //
-    //     video_th->endSava();
-    // });
+    // video_th = new VideoWaiter();
+    // videoThread = new QThread();
+    // video_th->moveToThread(videoThread);
+    // videoThread->start();
+    // connect(decode_th->getVideoDecoder(), &VideoDecoder::sendVideoFrame, video_th, &VideoWaiter::recvVideoFrame);
+    // connect(video_th, &VideoWaiter::getAudioClock, audio_th, &AudioRenderer::onGetAudioClock, Qt::DirectConnection); // 必须直连
 
     connect(slider, &CSlider::sliderClicked, this, &ControlWidget::startSeek);
     connect(slider, &CSlider::sliderMoved, decode_th, &Decoder::setCurFrame);
@@ -156,7 +195,6 @@ ControlWidget::~ControlWidget()
 
     decode_th->deleteLater();
     audio_th->deleteLater();
-    video_th->deleteLater();
 
     decodeThread->quit();
     decodeThread->wait();
@@ -166,9 +204,10 @@ ControlWidget::~ControlWidget()
     audioThread->wait();
     audioThread->deleteLater();
 
-    videoThread->quit();
-    videoThread->wait();
-    videoThread->deleteLater();
+    // video_th->deleteLater();
+    // videoThread->quit();
+    // videoThread->wait();
+    // videoThread->deleteLater();
 
     qDebug() << "ControlWidget::~ControlWidget()";
 }
@@ -238,6 +277,10 @@ void ControlWidget::changePlayState()
         m_type = CONTL_TYPE::PLAY;
         break;
 
+    case CONTL_TYPE::NONE:
+        emit ControlWidget::openFileRequest();
+        break;
+
     default:
         break;
     }
@@ -247,13 +290,12 @@ void ControlWidget::changePlayState()
 
 void ControlWidget::startSeek()
 {
-    isPlay = (m_type == CONTL_TYPE::PLAY);
-    m_type = CONTL_TYPE::PAUSE;
+    m_type = (m_type == CONTL_TYPE::PLAY) ? CONTL_TYPE::SEEK_ON_PLAY : CONTL_TYPE::SEEK_ON_PAUSE;
 }
 
 void ControlWidget::endSeek()
 {
-    m_type = (isPlay ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
+    m_type = ((m_type == CONTL_TYPE::SEEK_ON_PLAY) ? CONTL_TYPE::PLAY : CONTL_TYPE::PAUSE);
     emit ControlWidget::startPlay();
 }
 
@@ -275,11 +317,30 @@ void ControlWidget::mousePressEvent(QMouseEvent *event)
     if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
     {
         if (event->button() == Qt::LeftButton)
-            changePlayState();
+            timerID = startTimer(250);
         else if (event->button() == Qt::RightButton)
             sliderWidget->setVisible(!sliderWidget->isVisible());
         // menu->exec(event->globalPos());
     }
+}
+
+void ControlWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
+    {
+        if (timerID)
+            killTimer(timerID);
+        timerID = 0;
+        if (event->button() == Qt::LeftButton)
+            emit fullScreenRequest();
+    }
+}
+
+void ControlWidget::timerEvent(QTimerEvent *event)
+{
+    killTimer(event->timerId());
+    timerID = 0;
+    changePlayState();
 }
 
 void ControlWidget::keyPressEvent(QKeyEvent *event)
@@ -316,17 +377,7 @@ bool ControlWidget::eventFilter(QObject *obj, QEvent *e)
     }
 }
 
-// void ControlWidget::mouseDoubleClickEvent(QMouseEvent *event)
-// {
-//     if (event->pos().x() >= 0 && event->pos().x() <= this->width() && event->pos().y() >= 0 && event->pos().y() <= this->height())
-//     {
-//         if (event->button() == Qt::LeftButton)
-//             emit fullScreenRequest();
-//         // else if (event->button() == Qt::RightButton)
-//         //     sliderWidget->setVisible(!sliderWidget->isVisible());
-//     }
-// }
-
+#pragma region slider
 void CSlider::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
@@ -386,6 +437,14 @@ void CSlider::setRange(int min, int max)
     one_percent = (max - min) / 100;
     QSlider::setRange(min, max);
 }
+#pragma endregion
+
+void FrameWidget::timerEvent(QTimerEvent *event)
+{
+    killTimer(event->timerId());
+    if (glWidget)
+        glWidget->update();
+}
 
 FrameWidget::FrameWidget(QWidget *parent) : QWidget(parent)
 {
@@ -428,10 +487,21 @@ void FrameWidget::onInitVideoOutput(int format)
     }
 }
 
-void FrameWidget::receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight)
+void FrameWidget::receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight, double picPts)
 {
     if (glWidget)
+    {
         glWidget->setPixelData(pixelData, pixelWidth, pixelHeight);
+
+        double curPts = 0.0;
+        getCurPts(curPts);
+        int gap = qAbs(curPts - picPts);
+
+        if (gap && curPts > 0.1)
+            startTimer(curPts - picPts);
+        else
+            glWidget->update();
+    }
     else if (pixelData)
         delete pixelData;
 }

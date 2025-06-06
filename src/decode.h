@@ -136,7 +136,7 @@ public:
     int64_t getDuration() const;
 
     // 获取支持的硬解码器
-    QList<QString> getSupportedHwDecoderNames();
+    QStringList getSupportedHwDecoderNames();
 };
 
 class AudioDecoder : public QObject

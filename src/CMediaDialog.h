@@ -10,20 +10,29 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QSlider>
-#include <QWidget>
+#include <QMainWindow>
+#include <QAction>
+#include <QListWidget>
+#include <QTimerEvent>
 
 // 画面窗口
 class FrameWidget : public QWidget
 {
     Q_OBJECT
+signals:
+    void getCurPts(double &pts);
+
 public slots:
     void onInitVideoOutput(int format);
-    void receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight);
+    void receviceFrame(uint8_t *pixelData, int pixelWidth, int pixelHeight, double pts);
 
 private:
     int curGLWidgetFormat{-1};
     BaseOpenGLWidget *glWidget = nullptr; // OpenGL窗口
     QWidget *backgroundWidget = nullptr;  // 背景窗口
+
+protected:
+    void timerEvent(QTimerEvent *event) override;
 
 public:
     explicit FrameWidget(QWidget *parent = nullptr);
@@ -64,11 +73,12 @@ class ControlWidget : public QWidget
     Q_OBJECT
 
 signals:
-    void startPlay();
-    void leftClicked();
-    void rightClicked();
-    // 全屏请求
-    void fullScreenRequest();
+    void setListVisible(bool visible);
+    void openFileRequest();   // 打开文件请求
+    void startPlay();         // 开始播放
+    void leftClicked();       // 左键点击
+    void rightClicked();      // 右键点击
+    void fullScreenRequest(); // 全屏请求
 
 private slots:
     // 响应音频进度条
@@ -90,7 +100,7 @@ private:
     CSlider *slider{nullptr};
     QLabel *timeLabel{nullptr};
     QLabel *totalTimeLabel{nullptr};
-    QPushButton *btn{nullptr}; // 测试用
+    QPushButton *listVisible{nullptr}; // 测试用
     QMenu *menu{nullptr};
 
     Decoder *decode_th{nullptr};
@@ -102,14 +112,16 @@ private:
 
     int m_type{NONE};
 
-    bool isPlay = false; // 保存拖动进度条前视频播放状态
+    int timerID{0};
 
 protected:
     virtual void mousePressEvent(QMouseEvent *event) override;
-    // virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
+    virtual void mouseDoubleClickEvent(QMouseEvent *event) override;
     // 键盘事件
     virtual void keyPressEvent(QKeyEvent *event) override;
     virtual bool eventFilter(QObject *obj, QEvent *event) override;
+
+    void timerEvent(QTimerEvent *event) override;
 
 public:
     ControlWidget(QWidget *parent = nullptr);
@@ -122,16 +134,27 @@ public:
     void changePlayState();
 };
 
-class CMediaDialog : public QWidget
+class CMediaDialog : public QMainWindow
 {
     Q_OBJECT
+private slots:
+    void onOpenFile();
+    void onOpenFolder();
 
 public slots:
     void onFullScreenRequest();
 
 private:
+    QListWidget *listWidget{nullptr};
+
     ControlWidget *controlWidget{nullptr};
     FrameWidget *frameWidget{nullptr};
+
+    QAction *openFile{nullptr};
+    QAction *openFolder{nullptr};
+    QAction *fullScreen{nullptr};
+    QAction *exit{nullptr};
+    QAction *about{nullptr};
 
 public:
     CMediaDialog(QWidget *parent = nullptr);

@@ -35,6 +35,8 @@ enum CONTL_TYPE
     NONE,
     PLAY,
     PAUSE,
+    SEEK_ON_PLAY,
+    SEEK_ON_PAUSE,
     STOP,
     RESUME,
     END,

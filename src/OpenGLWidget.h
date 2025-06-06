@@ -46,6 +46,7 @@ private:
 protected:
     virtual void initializeGL() override;
     virtual void paintGL() override;
+    virtual void resizeGL(int w, int h) override;
 
 public:
     Nv12GLWidget(QWidget *parent = nullptr) : BaseOpenGLWidget(parent) {}
@@ -60,6 +61,7 @@ private:
 protected:
     virtual void initializeGL() override;
     virtual void paintGL() override;
+    virtual void resizeGL(int w, int h) override;
 
 public:
     Yuv420GLWidget(QWidget *parent = nullptr) : BaseOpenGLWidget(parent) {}

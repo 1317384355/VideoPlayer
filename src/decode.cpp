@@ -4,39 +4,39 @@
 #include <QImage>
 #include <QPixmap>
 #include <QThread>
-
-class AVPacketUniquePtr : public std::unique_ptr<AVPacket, void (*)(AVPacket *)>
+#pragma region unique_ptr
+// decltype(packet_deleter)* 等同于 void (*)(AVPacket*)
+void packet_deleter(AVPacket *pkt) { av_packet_free(&pkt); }
+// 自动调用av_packet_alloc和av_packet_free
+class AVPacketUniquePtr : public std::unique_ptr<AVPacket, decltype(packet_deleter) *>
 {
 public:
-    AVPacketUniquePtr() : std::unique_ptr<AVPacket, void (*)(AVPacket *)>(av_packet_alloc(), [](AVPacket *p)
-                                                                          { av_packet_free(&p); }) {}
-    AVPacketUniquePtr(AVPacket *p) : std::unique_ptr<AVPacket, void (*)(AVPacket *)>(p, [](AVPacket *p)
-                                                                                     { av_packet_free(&p); }) {}
+    AVPacketUniquePtr() : std::unique_ptr<AVPacket, decltype(packet_deleter) *>(av_packet_alloc(), packet_deleter) {}
+    AVPacketUniquePtr(AVPacket *p) : std::unique_ptr<AVPacket, decltype(packet_deleter) *>(p, packet_deleter) {}
 
-    // 禁用拷贝
-    AVPacketUniquePtr(const AVPacketUniquePtr &) = delete;
-    // 允许移动
-    AVPacketUniquePtr(AVPacketUniquePtr &&) = default;
+    AVPacketUniquePtr(const AVPacketUniquePtr &) = delete; // 禁用拷贝
+    AVPacketUniquePtr(AVPacketUniquePtr &&) = default;     // 允许移动
+    AVPacketUniquePtr &operator=(const AVPacketUniquePtr &) = delete;
+    AVPacketUniquePtr &operator=(AVPacketUniquePtr &&other) = default;
+    AVPacketUniquePtr &operator=(AVPacket *other) { return *this = AVPacketUniquePtr(other); }
 };
 
-class AVFrameUniquePtr : public std::unique_ptr<AVFrame, void (*)(AVFrame *)>
+void frame_deleter(AVFrame *frame) { av_frame_free(&frame); }
+class AVFrameUniquePtr : public std::unique_ptr<AVFrame, decltype(frame_deleter) *>
 {
 public:
-    AVFrameUniquePtr() : std::unique_ptr<AVFrame, void (*)(AVFrame *)>(av_frame_alloc(), [](AVFrame *p)
-                                                                       { av_frame_free(&p); }) {}
+    AVFrameUniquePtr() : std::unique_ptr<AVFrame, decltype(frame_deleter) *>(av_frame_alloc(), frame_deleter) {}
 
-    // 禁用拷贝
-    AVFrameUniquePtr(const AVFrameUniquePtr &) = delete;
-    // 允许移动
-    AVFrameUniquePtr(AVFrameUniquePtr &&) = default;
+    AVFrameUniquePtr(AVFrame *p) : std::unique_ptr<AVFrame, decltype(frame_deleter) *>(p, frame_deleter) {}
 
-    AVFrameUniquePtr(AVFrame *p) : std::unique_ptr<AVFrame, void (*)(AVFrame *)>(p, [](AVFrame *p)
-                                                                                 { av_frame_free(&p); }) {}
+    AVFrameUniquePtr(const AVFrameUniquePtr &) = delete; // 禁用拷贝
+    AVFrameUniquePtr(AVFrameUniquePtr &&) = default;     // 允许移动
 
     AVFrameUniquePtr &operator=(const AVFrameUniquePtr &) = delete;
     AVFrameUniquePtr &operator=(AVFrameUniquePtr &&other) = default;
     AVFrameUniquePtr &operator=(AVFrame *other) { return *this = AVFrameUniquePtr(other); }
 };
+#pragma endregion
 
 #define MAX_AUDIO_FRAME_SIZE 192000
 QString av_get_pixelformat_name(AVPixelFormat format);
@@ -47,7 +47,7 @@ Decoder::Decoder(const int *_type, QObject *parent)
       mediaType(UNKNOWN),
       m_type(_type)
 {
-    avformat_network_init(); // Initialize FFmpeg network components
+    // avformat_network_init(); // Initialize FFmpeg network components
     audioDecoder = new AudioDecoder(this);
     videoDecoder = new VideoDecoder(this);
 
@@ -64,6 +64,7 @@ Decoder::~Decoder()
 {
 }
 
+#pragma region api
 void Decoder::setVideoPath(const QString &filePath)
 {
     clean();
@@ -108,9 +109,9 @@ int64_t Decoder::getDuration() const
     return ret;
 }
 
-QList<QString> Decoder::getSupportedHwDecoderNames()
+QStringList Decoder::getSupportedHwDecoderNames()
 {
-    QList<QString> ret;
+    QStringList ret;
     AVBufferRef *hw_device_ctx = nullptr;
     for (auto device : devices)
     {
@@ -149,7 +150,9 @@ void Decoder::setCurFrame(int64_t curPts_s)
     // qDebug() << "curPts_ms: " << curPts_ms << "timestamp :" << timestamp;
     av_seek_frame(formatContext, defaltStreamIndex, timestamp, AVSEEK_FLAG_BACKWARD);
 }
+#pragma endregion
 
+#pragma region init
 int Decoder::initFFmpeg(const QString &filePath)
 {
     try
@@ -354,6 +357,7 @@ int Decoder::initCodec(AVCodecContext **codecContext, AVCodecParameters *codecpa
     qDebug() << "(*codecContext)->codec_id: " << (*codecContext)->codec_id;
     return avcodec_open2(*codecContext, codec, nullptr);
 }
+#pragma endregion
 
 void Decoder::clean()
 {
@@ -391,6 +395,7 @@ void Decoder::clearPacketQueue()
     }
 }
 
+#pragma region decode
 void Decoder::decodePacket()
 {
     if (*m_type != CONTL_TYPE::PLAY)
@@ -425,15 +430,12 @@ void Decoder::decodeAudio()
 {
     while (*m_type == CONTL_TYPE::PLAY)
     {
-#if true
         emit getCurPts(curPts);
         if (curPts > audioDecoder->lastPts)
         {
             AVPacketUniquePtr packet;
             if (av_read_frame(formatContext, packet.get()) < 0)
-            {
                 throw (int)CONTL_TYPE::END;
-            }
 
             if (packet->stream_index == audioStreamIndex)
             {
@@ -446,44 +448,37 @@ void Decoder::decodeAudio()
                 qDebug() << "in audio unknow stream index: " << packet->stream_index;
             }
         }
-#else
-        while (audioDecoder->packetIsUsed == false)
-        {
-            if (*m_type != CONTL_TYPE::PLAY)
-                throw *m_type;
-            QThread::msleep(10);
-        }
-
-        AVPacket *packet = av_packet_alloc();
-        if (av_read_frame(formatContext, packet) < 0)
-            throw (int)CONTL_TYPE::END;
-        if (packet->stream_index == audioStreamIndex)
-        {
-            audioDecoder->packetIsUsed = false;
-            emit sendAudioPacket(packet);
-        }
-        else
-        {
-            qDebug() << "unknow stream index: " << packet->stream_index;
-            av_packet_free(&packet);
-        }
-#endif
     }
 }
 
 void Decoder::decodeVideo()
 {
+    while (*m_type == CONTL_TYPE::PLAY)
+    {
+        AVPacketUniquePtr packet;
+        if (av_read_frame(formatContext, packet.get()) < 0)
+            throw (int)CONTL_TYPE::END;
+
+        if (packet->stream_index == videoStreamIndex)
+        {
+            if (*m_type == CONTL_TYPE::PLAY)
+                videoDecoder->decodeVideoPacket(std::move(packet));
+        }
+        else
+        {
+            // qDebug() << "unknow stream index: " << packet->stream_index;
+        }
+    }
 }
 
 void Decoder::decodeMultMedia()
 {
     while (*m_type == CONTL_TYPE::PLAY)
     {
-#if true
         emit getCurPts(curPts);
+        AVPacketUniquePtr packet = nullptr;
         if (curPts > audioDecoder->lastPts)
         {
-            AVPacket *packet = nullptr;
             if (!audioPacketQueue.isEmpty())
             {
                 packet = audioPacketQueue.dequeue();
@@ -491,33 +486,28 @@ void Decoder::decodeMultMedia()
             else
             {
                 packet = av_packet_alloc();
-                if (av_read_frame(formatContext, packet) < 0)
-                {
-                    av_packet_free(&packet);
+                if (av_read_frame(formatContext, packet.get()) < 0)
                     throw (int)CONTL_TYPE::END;
-                }
             }
 
             if (packet->stream_index == audioStreamIndex)
             {
                 // qDebug() << "audioStreamIndex, packet->pts: " << audioDecoder->time_base_q2d_ms * packet->pts;
                 if (*m_type == CONTL_TYPE::PLAY)
-                    audioDecoder->decodeAudioPacket(packet);
+                    audioDecoder->decodeAudioPacket(std::move(packet));
             }
             else if (packet->stream_index == videoStreamIndex)
             {
-                videoPacketQueue.enqueue(packet);
+                videoPacketQueue.enqueue(packet.release());
             }
             else
             {
                 qDebug() << "in audio unknow stream index: " << packet->stream_index;
-                av_packet_free(&packet);
             }
         }
 
         if (curPts > videoDecoder->lastPts)
         {
-            AVPacket *packet = nullptr;
             if (!videoPacketQueue.isEmpty())
             {
                 packet = videoPacketQueue.dequeue();
@@ -525,103 +515,30 @@ void Decoder::decodeMultMedia()
             else
             {
                 packet = av_packet_alloc();
-                if (av_read_frame(formatContext, packet) < 0)
-                {
-                    av_packet_free(&packet);
+                if (av_read_frame(formatContext, packet.get()) < 0)
                     throw (int)CONTL_TYPE::END;
-                }
             }
 
             if (packet->stream_index == videoStreamIndex)
             {
                 // qDebug() << "videoStreamIndex, packet->pts: " << videoDecoder->time_base_q2d_ms * packet->pts;
                 if (*m_type == CONTL_TYPE::PLAY)
-                    videoDecoder->decodeVideoPacket(packet);
+                    videoDecoder->decodeVideoPacket(std::move(packet));
             }
             else if (packet->stream_index == audioStreamIndex)
             {
-                audioPacketQueue.enqueue(packet);
+                audioPacketQueue.enqueue(packet.release());
             }
             else
             {
                 qDebug() << "in video unknow stream index: " << packet->stream_index;
-                av_packet_free(&packet);
             }
         }
-#else
-        while (audioDecoder->packetIsUsed == false && videoDecoder->packetIsUsed == false)
-        {
-            if (*m_type != CONTL_TYPE::PLAY)
-                throw *m_type;
-            QThread::msleep(10);
-        }
-
-        if (audioDecoder->packetIsUsed)
-        {
-            AVPacket *packet = nullptr;
-            if (!audioPacketQueue.isEmpty())
-            {
-                packet = audioPacketQueue.dequeue();
-            }
-            else
-            {
-                packet = av_packet_alloc();
-                if (av_read_frame(formatContext, packet) < 0)
-                    throw (int)CONTL_TYPE::END;
-            }
-
-            if (packet->stream_index == audioStreamIndex)
-            {
-                // qDebug() << "audioStreamIndex, packet->pts: " << audioDecoder->time_base_q2d_ms * packet->pts;
-
-                audioDecoder->packetIsUsed = false;
-                emit sendAudioPacket(packet);
-            }
-            else if (packet->stream_index == videoStreamIndex)
-            {
-                videoPacketQueue.enqueue(packet);
-            }
-            else
-            {
-                qDebug() << "in audio unknow stream index: " << packet->stream_index;
-                av_packet_free(&packet);
-            }
-        }
-        if (videoDecoder->packetIsUsed)
-        {
-            AVPacket *packet = nullptr;
-            if (!videoPacketQueue.isEmpty())
-            {
-                packet = videoPacketQueue.dequeue();
-            }
-            else
-            {
-                packet = av_packet_alloc();
-                if (av_read_frame(formatContext, packet) < 0)
-                    throw (int)CONTL_TYPE::END;
-            }
-
-            if (packet->stream_index == videoStreamIndex)
-            {
-                // qDebug() << "videoStreamIndex, packet->pts: " << videoDecoder->time_base_q2d_ms * packet->pts;
-
-                videoDecoder->packetIsUsed = false;
-                emit sendVideoPacket(packet);
-            }
-            else if (packet->stream_index == audioStreamIndex)
-            {
-                audioPacketQueue.enqueue(packet);
-            }
-            else
-            {
-                qDebug() << "in video unknow stream index: " << packet->stream_index;
-                av_packet_free(&packet);
-            }
-        }
-#endif
     }
 }
+#pragma endregion
 
+#pragma region AudioDecoder
 void AudioDecoder::clean()
 {
     // 倒着清理
@@ -663,9 +580,9 @@ void AudioDecoder::decodeAudioPacket(AVPacketUniquePtr packet)
 
             if (convertedSize > 0)
             {
-                int channels = frame.get()->ch_layout.nb_channels;
+                int channels = frame->ch_layout.nb_channels;
                 int bufferSize = av_samples_get_buffer_size(nullptr, channels, convertedSize, AV_SAMPLE_FMT_S16, 1);
-                double framePts = time_base_q2d_ms * frame.get()->pts;
+                double framePts = time_base_q2d_ms * frame->pts;
 
                 lastPts = framePts;
                 // 将转换后的音频数据发送到音频播放器
@@ -682,7 +599,9 @@ void AudioDecoder::decodeAudioPacket(AVPacketUniquePtr packet)
         }
     }
 }
+#pragma endregion
 
+#pragma region VideoDecoder
 void VideoDecoder::clean()
 {
     hw_device_pix_fmt = AV_PIX_FMT_NONE;
@@ -804,7 +723,7 @@ uint8_t *VideoDecoder::copyYuv420pData(uint8_t **pixelData, int *linesize, int p
 uint8_t *VideoDecoder::copyDefaultData(AVFrame *frame)
 {
     AVFrameUniquePtr dstFrame = transFrameToDstFmt(frame, frame->width, frame->height, AV_PIX_FMT_YUV420P);
-    return copyYuv420pData(dstFrame.get()->data, frame->linesize, frame->width, frame->height);
+    return copyYuv420pData(dstFrame->data, frame->linesize, frame->width, frame->height);
 }
 
 AVFrame *VideoDecoder::transFrameToRGB24(AVFrame *srcFrame, int pixelWidth, int pixelHeight)
@@ -854,7 +773,7 @@ int VideoDecoder::writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight,
     if (frame->format != AV_PIX_FMT_RGB24)
     {
         AVFrameUniquePtr frameRGB = transFrameToRGB24(frame, pixelWidth, pixelHeight);
-        QImage(frameRGB.get()->data[0], pixelWidth, pixelHeight, frameRGB.get()->linesize[0], QImage::Format_RGB888).save(fileName);
+        QImage(frameRGB->data[0], pixelWidth, pixelHeight, frameRGB->linesize[0], QImage::Format_RGB888).save(fileName);
     }
     else
     {
@@ -863,7 +782,9 @@ int VideoDecoder::writeOneFrame(AVFrame *frame, int pixelWidth, int pixelHeight,
 
     return 0;
 }
+#pragma endregion
 
+#pragma region other
 // AVPixelFormat Decoder::getHwFormat(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
 // {
 //     const enum AVPixelFormat *p;
@@ -970,3 +891,4 @@ QString av_get_pixelformat_name(AVPixelFormat format)
     }
     return name;
 }
+#pragma endregion
